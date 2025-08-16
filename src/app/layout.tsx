@@ -7,7 +7,7 @@ import { QueueProvider } from '@/context/queue-context';
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
 
 export const metadata: Metadata = {
-  title: 'BKPM Q - Sistem Antrian',
+  title: 'Q-NEXT - Sistem Antrian',
   description: 'Sistem antrian modern untuk front office BKPM.',
 };
 
