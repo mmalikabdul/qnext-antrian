@@ -81,47 +81,57 @@ export default function MonitorPage() {
     return () => clearInterval(timer);
   }, []);
 
+  // Effect for new calls
   useEffect(() => {
-    if (!nowServing) {
-      lastCalledTicketIdRef.current = null;
-      return;
+    if (!nowServing || nowServing.ticket.id === lastCalledTicketIdRef.current) {
+        return;
     }
-    
+
     const { ticket, counter } = nowServing;
-    const ticketId = ticket.id;
     const ticketNumber = ticket.number;
     
-    // Logic for new calls
-    if (ticketId !== lastCalledTicketIdRef.current) {
-        const audio = audioRef.current;
-        if (audio) {
-            const handleAudioEnd = () => {
-                const textToSpeak = `Nomor antrian, ${ticketNumber.split('').join(' ')}, silahkan menuju, ke loket, ${counter}`;
-                speak(textToSpeak);
-                audio.removeEventListener('ended', handleAudioEnd);
-            };
-            audio.addEventListener('ended', handleAudioEnd);
-            audio.play().catch(e => {
-                console.error("Audio play failed, falling back to speech only.", e);
-                handleAudioEnd();
-            });
-        }
-        lastCalledTicketIdRef.current = ticketId;
+    lastCalledTicketIdRef.current = ticket.id;
+
+    const audio = audioRef.current;
+    if (audio) {
+        const handleAudioEnd = () => {
+            const textToSpeak = `Nomor antrian, ${ticketNumber.split('').join(' ')}, silahkan menuju, ke loket, ${counter}`;
+            speak(textToSpeak);
+            audio.removeEventListener('ended', handleAudioEnd);
+        };
+        audio.addEventListener('ended', handleAudioEnd);
+        audio.play().catch(e => {
+            console.error("Audio play failed, falling back to speech only.", e);
+            handleAudioEnd(); // Play speech even if audio fails
+        });
     }
+  }, [nowServing, speak]);
 
-    // Logic for recalls
+  // Effect for recalls
+  useEffect(() => {
     const recallInfo = state.recallInfo;
-    if (recallInfo && recallInfo.ticketId === ticketId) {
-        setIsRecalling(true);
-        const timer = setTimeout(() => setIsRecalling(false), 2000); // Visual cue for 2s
-
-        const textToSpeak = `Panggilan ulang untuk, nomor antrian, ${ticketNumber.split('').join(' ')}, silahkan menuju, ke loket, ${counter}`;
-        speak(textToSpeak);
-        
-        return () => clearTimeout(timer);
+    if (!recallInfo || !nowServing || recallInfo.ticketId !== nowServing.ticket.id) {
+        return;
     }
     
-  }, [nowServing, state.recallInfo, speak]);
+    // Check if this recall has already been processed
+    if(recallInfo.timestamp === lastCalledTicketIdRef.current) return;
+
+
+    const { ticket, counter } = nowServing;
+    const ticketNumber = ticket.number;
+
+    setIsRecalling(true);
+    const timer = setTimeout(() => setIsRecalling(false), 2000); // Visual cue for 2s
+
+    const textToSpeak = `Panggilan ulang untuk, nomor antrian, ${ticketNumber.split('').join(' ')}, silahkan menuju, ke loket, ${counter}`;
+    speak(textToSpeak);
+    
+    // Mark this recall timestamp as processed
+    lastCalledTicketIdRef.current = recallInfo.timestamp.toString();
+
+    return () => clearTimeout(timer);
+  }, [state.recallInfo, nowServing, speak]);
 
 
   const waitingTickets = tickets.filter(t => t.status === 'waiting');
@@ -138,18 +148,13 @@ export default function MonitorPage() {
       params.set('controls', '0');
       
       if (params.has('list')) {
-        // This is a playlist
         url.pathname = '/embed/videoseries';
       } else if (url.pathname.includes('/embed/')) {
-        // Already an embed link, just ensure playlist param for loop
         const videoId = url.pathname.split('/embed/')[1];
         if (!params.has('playlist')) {
             params.set('playlist', videoId);
         }
-      } else {
-        // Not a standard embed link, fallback might be needed
-        console.warn("Non-standard YouTube URL detected, trying to adapt.");
-      }
+      } 
       
       url.search = params.toString();
       return url.toString();
