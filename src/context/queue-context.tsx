@@ -96,6 +96,7 @@ interface QueueState {
   users: User[];
   currentUser: User | null;
   authLoaded: boolean;
+  videoUrl: string;
 }
 
 interface QueueContextType {
@@ -106,7 +107,7 @@ interface QueueContextType {
   callNextTicket: (serviceId: string, counter: number) => Promise<void>;
   completeTicket: (ticketId: string) => Promise<void>;
   recallTicket: () => void;
-  addStaff: (staffData: any, adminUser: User) => Promise<void>;
+  addStaff: (staffData: any) => Promise<void>;
   updateStaff: (staff: Staff) => Promise<void>;
   deleteStaff: (staffId: string) => Promise<void>;
   addCounter: (counter: Omit<Counter, 'id' | 'docId'>) => Promise<void>;
@@ -115,6 +116,7 @@ interface QueueContextType {
   addService: (service: Omit<Service, 'icon' | 'id'> & { id: string }) => Promise<void>;
   updateService: (service: Omit<Service, 'icon'>) => Promise<void>;
   deleteService: (serviceId: string) => Promise<void>;
+  updateVideoUrl: (url: string) => Promise<void>;
 }
 
 const QueueContext = createContext<QueueContextType | undefined>(undefined);
@@ -138,6 +140,7 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
     users: [],
     currentUser: null,
     authLoaded: false,
+    videoUrl: 'https://www.youtube.com/embed/videoseries?list=PL2_3w_50q_p_4i_t_aA-i1l_n5s-ZqGcB'
   });
   const { toast } = useToast();
   const auth = getAuth(app);
@@ -226,6 +229,22 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
       setState(prevState => ({...prevState, counters}));
     }, (error) => {
       console.error("Error fetching counters:", error);
+    });
+    return () => unsubscribe();
+  }, []);
+  
+  // Subscribe to Settings (for video URL)
+  useEffect(() => {
+    const settingsRef = doc(db, 'settings', 'display');
+    const unsubscribe = onSnapshot(settingsRef, (doc) => {
+        if (doc.exists()) {
+            const data = doc.data();
+            if (data.videoUrl) {
+                setState(prevState => ({...prevState, videoUrl: data.videoUrl }));
+            }
+        }
+    }, (error) => {
+        console.error("Error fetching settings:", error);
     });
     return () => unsubscribe();
   }, []);
@@ -356,28 +375,28 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
 
   const callNextTicket = async (serviceId: string, counter: number) => {
     try {
-        const nextTicket = state.tickets
-            .filter(t => t.serviceId === serviceId && t.status === 'waiting')
-            .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
-            [0];
+      const waitingTickets = state.tickets.filter(t => t.serviceId === serviceId && t.status === 'waiting');
+      
+      if (waitingTickets.length === 0) {
+        toast({ title: 'Info', description: 'Tidak ada antrian untuk layanan ini.'});
+        return;
+      }
+      
+      // Sorting is implicitly handled by Firestore query order, but we can sort here to be safe
+      const nextTicket = waitingTickets.sort((a,b) => a.timestamp.getTime() - b.timestamp.getTime())[0];
 
-        if (!nextTicket) {
-            toast({ title: 'Info', description: 'Tidak ada antrian untuk layanan ini.'});
-            return;
-        }
+      const batch = writeBatch(db);
+      batch.update(doc(db, 'tickets', nextTicket.id), { status: 'serving' });
 
-        const batch = writeBatch(db);
-        batch.update(doc(db, 'tickets', nextTicket.id), { status: 'serving' });
-
-        const nowServingSnapshot = await getDocs(collection(db, 'nowServing'));
-        nowServingSnapshot.forEach(doc => batch.delete(doc.ref));
-        
-        const nowServingCol = collection(db, 'nowServing');
-        const nowServingRef = doc(nowServingCol);
-        batch.set(nowServingRef, { ticketId: nextTicket.id, counter });
-        
-        await batch.commit();
-        toast({ title: "Memanggil Antrian", description: `Nomor ${nextTicket.number} dipanggil ke loket ${counter}.`})
+      const nowServingSnapshot = await getDocs(collection(db, 'nowServing'));
+      nowServingSnapshot.forEach(doc => batch.delete(doc.ref));
+      
+      const nowServingCol = collection(db, 'nowServing');
+      const nowServingRef = doc(nowServingCol);
+      batch.set(nowServingRef, { ticketId: nextTicket.id, counter });
+      
+      await batch.commit();
+      toast({ title: "Memanggil Antrian", description: `Nomor ${nextTicket.number} dipanggil ke loket ${counter}.`})
 
     } catch (error) {
         console.error("Error calling next ticket: ", error);
@@ -411,20 +430,11 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
   };
 
   // --- Admin Functions ---
- const addStaff = async (staffData: any, adminUser: User) => {
+  const addStaff = async (staffData: any) => {
     const { email, password, name, counters } = staffData;
-    const auth = getAuth(app);
-    
-    // This is a simplified client-side flow. A more robust solution uses Cloud Functions.
-    // The main limitation is that createUserWithEmailAndPassword signs in the new user.
-    if (!adminUser?.email) {
-      throw new Error("Admin user is not properly logged in.");
-    }
-    const adminEmail = adminUser.email;
+    const tempAuth = getAuth(app); // Use the same app instance
     
     try {
-        const tempAuth = getAuth(app); // Use the same app instance
-        
         // 1. Create the new user. This will log out the admin.
         const newUserCredential = await createUserWithEmailAndPassword(tempAuth, email, password);
         const newUser = newUserCredential.user;
@@ -524,10 +534,15 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
         throw e;
     }
   }
+  
+  const updateVideoUrl = async (url: string) => {
+    const settingsRef = doc(db, 'settings', 'display');
+    await setDoc(settingsRef, { videoUrl: url }, { merge: true });
+  }
 
 
   return (
-    <QueueContext.Provider value={{ state, loginUser, logoutUser, addTicket, callNextTicket, completeTicket, recallTicket, addStaff, updateStaff, deleteStaff, addCounter, updateCounter, deleteCounter, addService, updateService, deleteService }}>
+    <QueueContext.Provider value={{ state, loginUser, logoutUser, addTicket, callNextTicket, completeTicket, recallTicket, addStaff, updateStaff, deleteStaff, addCounter, updateCounter, deleteCounter, addService, updateService, deleteService, updateVideoUrl }}>
       {children}
     </QueueContext.Provider>
   );

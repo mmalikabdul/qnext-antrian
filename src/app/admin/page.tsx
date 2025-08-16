@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Users, Briefcase, Ticket, Clock, LogOut, BarChart2, Settings, UserCog, Building, FileText, PlusCircle, Edit, Trash2 } from 'lucide-react';
+import { Users, Briefcase, Ticket, Clock, LogOut, BarChart2, Settings, UserCog, Building, FileText, PlusCircle, Edit, Trash2, Film } from 'lucide-react';
 import BkpmLogo from '@/components/icons/bkpm-logo';
 import { useQueue } from '@/context/queue-context';
 import type { Staff, Counter, Service, User } from '@/context/queue-context';
@@ -211,8 +211,7 @@ const StaffTab = () => {
             } else { // Adding
                 if (!currentUser) throw new Error("Admin user not found.");
                 
-                // We pass the current admin user to the addStaff function
-                await addStaff(data, currentUser);
+                await addStaff(data);
                 
                 toast({ 
                     title: "Sukses", 
@@ -237,7 +236,7 @@ const StaffTab = () => {
 
     const handleDeleteStaff = async (id: string) => {
         try {
-            await deleteStaff(id); // Deleting staff should also handle user deletion in the context
+            await deleteStaff(id);
             toast({ title: "Sukses", description: "Petugas berhasil dihapus." });
         } catch(e) {
             toast({ title: "Error", description: "Gagal menghapus petugas.", variant: "destructive" });
@@ -616,6 +615,59 @@ const ServiceTab = () => {
     );
 }
 
+const VideoTab = () => {
+    const { state: { videoUrl }, updateVideoUrl } = useQueue();
+    const [url, setUrl] = React.useState(videoUrl);
+    const [isLoading, setIsLoading] = React.useState(false);
+    const { toast } = useToast();
+
+    React.useEffect(() => {
+        setUrl(videoUrl);
+    }, [videoUrl]);
+
+    const handleSave = async () => {
+        setIsLoading(true);
+        try {
+            await updateVideoUrl(url);
+            toast({ title: "Sukses", description: "URL Video berhasil diperbarui." });
+        } catch (error) {
+            toast({ title: "Error", description: "Gagal memperbarui URL video.", variant: "destructive" });
+            console.error(error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    return (
+        <Card>
+            <CardHeader>
+                <CardTitle>Manajemen Video Monitor</CardTitle>
+                <CardDescription>
+                    Atur video atau playlist YouTube yang akan ditampilkan di layar monitor antrian.
+                </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+                <div className="space-y-2">
+                    <Label htmlFor="video-url">URL Playlist YouTube</Label>
+                    <Input 
+                        id="video-url" 
+                        value={url} 
+                        onChange={(e) => setUrl(e.target.value)}
+                        placeholder="https://www.youtube.com/embed/videoseries?list=..."
+                    />
+                    <p className="text-sm text-muted-foreground">
+                        Pastikan Anda menggunakan URL "embed" dari YouTube, bukan URL biasa. Contoh: <strong>https://www.youtube.com/embed/videoseries?list=PL2_3w_50q_p_4i_t_aA-i1l_n5s-ZqGcB</strong>
+                    </p>
+                </div>
+                <Button onClick={handleSave} disabled={isLoading}>
+                    {isLoading ? 'Menyimpan...' : 'Simpan Perubahan'}
+                </Button>
+            </CardContent>
+        </Card>
+    );
+};
+
+
 const ReportTab = () => {
     return (
         <Card>
@@ -694,12 +746,14 @@ export default function AdminPage() {
                 <TabsTrigger value="staff"><UserCog className="mr-2"/> Petugas</TabsTrigger>
                 <TabsTrigger value="counters"><Building className="mr-2"/> Loket</TabsTrigger>
                 <TabsTrigger value="services"><Settings className="mr-2"/> Layanan</TabsTrigger>
+                <TabsTrigger value="video"><Film className="mr-2"/> Video</TabsTrigger>
                 <TabsTrigger value="reports"><FileText className="mr-2"/> Laporan</TabsTrigger>
             </TabsList>
             <TabsContent value="dashboard"><DashboardTab /></TabsContent>
             <TabsContent value="staff"><StaffTab /></TabsContent>
             <TabsContent value="counters"><CounterTab /></TabsContent>
             <TabsContent value="services"><ServiceTab /></TabsContent>
+            <TabsContent value="video"><VideoTab /></TabsContent>
             <TabsContent value="reports"><ReportTab /></TabsContent>
         </Tabs>
       </main>

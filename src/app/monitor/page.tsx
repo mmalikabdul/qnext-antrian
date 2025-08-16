@@ -67,7 +67,7 @@ const getServiceIcon = (serviceId: string) => {
 
 export default function MonitorPage() {
   const { state, recallTicket } = useQueue();
-  const { nowServing, tickets } = state;
+  const { nowServing, tickets, videoUrl } = state;
   const { speak } = useSpeech();
   const lastSpokenRef = useRef<string | null>(null);
 
@@ -110,14 +110,20 @@ export default function MonitorPage() {
       <main className="flex-1 grid grid-cols-12 grid-rows-6 gap-6 p-6">
         {/* Video Player */}
         <div className="col-span-8 row-span-4 rounded-lg overflow-hidden shadow-2xl">
-           <iframe
-              className="w-full h-full"
-              src="https://www.youtube.com/embed/videoseries?list=PL2_3w_50q_p_4i_t_aA-i1l_n5s-ZqGcB&autoplay=1&mute=1&loop=1&controls=0"
-              title="YouTube video player"
-              frameBorder="0"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-              allowFullScreen>
-            </iframe>
+           {videoUrl ? (
+                <iframe
+                    className="w-full h-full"
+                    src={`${videoUrl}&autoplay=1&mute=1&loop=1&controls=0`}
+                    title="YouTube video player"
+                    frameBorder="0"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen>
+                </iframe>
+            ) : (
+                <div className="w-full h-full bg-black flex items-center justify-center">
+                    <p className="text-primary-foreground">Video tidak tersedia.</p>
+                </div>
+            )}
         </div>
 
         {/* Now Serving */}
