@@ -127,7 +127,11 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
   const { toast } = useToast();
 
   const loginUser = (user: User) => {
-    setState(prevState => ({ ...prevState, currentUser: user }));
+    if (user && user.uid && user.email && user.role) {
+      setState(prevState => ({ ...prevState, currentUser: user }));
+    } else {
+      console.error("Attempted to log in with invalid user object:", user);
+    }
   };
 
   const logoutUser = () => {
