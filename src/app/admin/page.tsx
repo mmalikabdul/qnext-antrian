@@ -8,8 +8,14 @@ import { Button } from '@/components/ui/button';
 import { Users, Briefcase, Ticket, Clock, LogOut, BarChart2, Settings, UserCog, Building, FileText, PlusCircle, Edit, Trash2 } from 'lucide-react';
 import BkpmLogo from '@/components/icons/bkpm-logo';
 import { useQueue } from '@/context/queue-context';
+import type { Staff, Counter, Service } from '@/context/queue-context';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 const chartData = [
   { name: '09:00', 'Layanan Konsultasi': 12, 'Pengajuan Perizinan': 20, 'Layanan Prioritas': 5 },
@@ -100,8 +106,63 @@ const DashboardTab = () => {
   );
 };
 
+const StaffForm = ({ staff, onSave, closeDialog }: { staff?: Staff | null, onSave: (data: Omit<Staff, 'id'> | Staff) => void, closeDialog: () => void }) => {
+    const { state: { counters } } = useQueue();
+    const [name, setName] = React.useState(staff?.name || '');
+    const [assignedCounters, setAssignedCounters] = React.useState<number[]>(staff?.counters || []);
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        const staffData = { name, counters: assignedCounters };
+        if (staff?.id) {
+            onSave({ ...staffData, id: staff.id });
+        } else {
+            onSave(staffData);
+        }
+        closeDialog();
+    };
+    
+    return (
+        <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-2">
+                <Label htmlFor="staff-name">Nama Petugas</Label>
+                <Input id="staff-name" value={name} onChange={(e) => setName(e.target.value)} required />
+            </div>
+            <div className="space-y-2">
+                <Label>Loket yang Dilayani</Label>
+                <div className="grid grid-cols-3 gap-2">
+                    {counters.filter(c => c.status === 'open').map(counter => (
+                        <div key={counter.id} className="flex items-center gap-2">
+                            <input
+                                type="checkbox"
+                                id={`counter-${counter.id}`}
+                                checked={assignedCounters.includes(counter.id)}
+                                onChange={(e) => {
+                                    if (e.target.checked) {
+                                        setAssignedCounters([...assignedCounters, counter.id]);
+                                    } else {
+                                        setAssignedCounters(assignedCounters.filter(id => id !== counter.id));
+                                    }
+                                }}
+                            />
+                            <Label htmlFor={`counter-${counter.id}`}>{counter.name}</Label>
+                        </div>
+                    ))}
+                </div>
+            </div>
+            <DialogFooter>
+                <Button type="submit">Simpan</Button>
+            </DialogFooter>
+        </form>
+    );
+};
+
+
 const StaffTab = () => {
-    const { state: { staff } } = useQueue();
+    const { state: { staff }, addStaff, updateStaff, deleteStaff } = useQueue();
+    const [isAddOpen, setIsAddOpen] = React.useState(false);
+    const [editingStaff, setEditingStaff] = React.useState<Staff | null>(null);
+
     return (
         <Card>
             <CardHeader className="flex flex-row items-center justify-between">
@@ -109,7 +170,17 @@ const StaffTab = () => {
                     <CardTitle>Manajemen Petugas</CardTitle>
                     <CardDescription>Tambah, edit, atau hapus data petugas.</CardDescription>
                 </div>
-                <Button><PlusCircle className="mr-2"/> Tambah Petugas</Button>
+                 <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+                    <DialogTrigger asChild>
+                        <Button><PlusCircle className="mr-2"/> Tambah Petugas</Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                        <DialogHeader>
+                            <DialogTitle>Tambah Petugas Baru</DialogTitle>
+                        </DialogHeader>
+                        <StaffForm onSave={addStaff} closeDialog={() => setIsAddOpen(false)} />
+                    </DialogContent>
+                </Dialog>
             </CardHeader>
             <CardContent>
                 <Table>
@@ -126,8 +197,32 @@ const StaffTab = () => {
                                 <TableCell className="font-medium">{s.name}</TableCell>
                                 <TableCell>{s.counters.join(', ')}</TableCell>
                                 <TableCell className="text-right">
-                                    <Button variant="ghost" size="icon"><Edit className="h-4 w-4"/></Button>
-                                    <Button variant="ghost" size="icon" className="text-destructive"><Trash2 className="h-4 w-4"/></Button>
+                                     <Dialog open={editingStaff?.id === s.id} onOpenChange={(isOpen) => !isOpen && setEditingStaff(null)}>
+                                        <DialogTrigger asChild>
+                                            <Button variant="ghost" size="icon" onClick={() => setEditingStaff(s)}><Edit className="h-4 w-4"/></Button>
+                                        </DialogTrigger>
+                                        <DialogContent>
+                                            <DialogHeader>
+                                                <DialogTitle>Edit Petugas</DialogTitle>
+                                            </DialogHeader>
+                                            <StaffForm staff={s} onSave={updateStaff} closeDialog={() => setEditingStaff(null)} />
+                                        </DialogContent>
+                                    </Dialog>
+                                    <AlertDialog>
+                                        <AlertDialogTrigger asChild>
+                                            <Button variant="ghost" size="icon" className="text-destructive"><Trash2 className="h-4 w-4"/></Button>
+                                        </AlertDialogTrigger>
+                                        <AlertDialogContent>
+                                            <AlertDialogHeader>
+                                                <AlertDialogTitle>Anda yakin?</AlertDialogTitle>
+                                                <AlertDialogDescription>Tindakan ini tidak dapat dibatalkan. Ini akan menghapus petugas secara permanen.</AlertDialogDescription>
+                                            </AlertDialogHeader>
+                                            <AlertDialogFooter>
+                                                <AlertDialogCancel>Batal</AlertDialogCancel>
+                                                <AlertDialogAction onClick={() => deleteStaff(s.id)}>Hapus</AlertDialogAction>
+                                            </AlertDialogFooter>
+                                        </AlertDialogContent>
+                                    </AlertDialog>
                                 </TableCell>
                             </TableRow>
                         ))}
@@ -138,8 +233,51 @@ const StaffTab = () => {
     );
 }
 
+const CounterForm = ({ counter, onSave, closeDialog }: { counter?: Counter | null, onSave: (data: Omit<Counter, 'id'> | Counter) => void, closeDialog: () => void }) => {
+    const [name, setName] = React.useState(counter?.name || '');
+    const [status, setStatus] = React.useState<'open' | 'closed'>(counter?.status || 'open');
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        const counterData = { name, status };
+        if (counter?.id) {
+            onSave({ ...counterData, id: counter.id });
+        } else {
+            onSave(counterData);
+        }
+        closeDialog();
+    };
+
+    return (
+        <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-2">
+                <Label htmlFor="counter-name">Nama Loket</Label>
+                <Input id="counter-name" value={name} onChange={(e) => setName(e.target.value)} required />
+            </div>
+            <div className="space-y-2">
+                <Label htmlFor="counter-status">Status</Label>
+                <Select value={status} onValueChange={(value: 'open' | 'closed') => setStatus(value)}>
+                    <SelectTrigger id="counter-status">
+                        <SelectValue placeholder="Pilih status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="open">Buka</SelectItem>
+                        <SelectItem value="closed">Tutup</SelectItem>
+                    </SelectContent>
+                </Select>
+            </div>
+            <DialogFooter>
+                <Button type="submit">Simpan</Button>
+            </DialogFooter>
+        </form>
+    );
+};
+
 const CounterTab = () => {
-    const { state: { counters } } = useQueue();
+    const { state: { counters }, addCounter, updateCounter, deleteCounter } = useQueue();
+    const [isAddOpen, setIsAddOpen] = React.useState(false);
+    const [editingCounter, setEditingCounter] = React.useState<Counter | null>(null);
+    
     return (
         <Card>
             <CardHeader  className="flex flex-row items-center justify-between">
@@ -147,7 +285,15 @@ const CounterTab = () => {
                     <CardTitle>Manajemen Loket</CardTitle>
                     <CardDescription>Atur loket yang tersedia untuk melayani.</CardDescription>
                 </div>
-                 <Button><PlusCircle className="mr-2"/> Tambah Loket</Button>
+                 <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+                    <DialogTrigger asChild>
+                        <Button><PlusCircle className="mr-2"/> Tambah Loket</Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                        <DialogHeader><DialogTitle>Tambah Loket Baru</DialogTitle></DialogHeader>
+                        <CounterForm onSave={addCounter} closeDialog={() => setIsAddOpen(false)} />
+                    </DialogContent>
+                </Dialog>
             </CardHeader>
             <CardContent>
                  <Table>
@@ -164,8 +310,30 @@ const CounterTab = () => {
                                 <TableCell className="font-medium">{c.name}</TableCell>
                                 <TableCell>{c.status === 'open' ? 'Buka' : 'Tutup'}</TableCell>
                                 <TableCell className="text-right">
-                                    <Button variant="ghost" size="icon"><Edit className="h-4 w-4"/></Button>
-                                    <Button variant="ghost" size="icon" className="text-destructive"><Trash2 className="h-4 w-4"/></Button>
+                                    <Dialog open={editingCounter?.id === c.id} onOpenChange={(isOpen) => !isOpen && setEditingCounter(null)}>
+                                        <DialogTrigger asChild>
+                                            <Button variant="ghost" size="icon" onClick={() => setEditingCounter(c)}><Edit className="h-4 w-4"/></Button>
+                                        </DialogTrigger>
+                                        <DialogContent>
+                                            <DialogHeader><DialogTitle>Edit Loket</DialogTitle></DialogHeader>
+                                            <CounterForm counter={c} onSave={updateCounter} closeDialog={() => setEditingCounter(null)} />
+                                        </DialogContent>
+                                    </Dialog>
+                                    <AlertDialog>
+                                        <AlertDialogTrigger asChild>
+                                            <Button variant="ghost" size="icon" className="text-destructive"><Trash2 className="h-4 w-4"/></Button>
+                                        </AlertDialogTrigger>
+                                        <AlertDialogContent>
+                                            <AlertDialogHeader>
+                                                <AlertDialogTitle>Anda yakin?</AlertDialogTitle>
+                                                <AlertDialogDescription>Tindakan ini tidak dapat dibatalkan. Ini akan menghapus loket secara permanen.</AlertDialogDescription>
+                                            </AlertDialogHeader>
+                                            <AlertDialogFooter>
+                                                <AlertDialogCancel>Batal</AlertDialogCancel>
+                                                <AlertDialogAction onClick={() => deleteCounter(c.id)}>Hapus</AlertDialogAction>
+                                            </AlertDialogFooter>
+                                        </AlertDialogContent>
+                                    </AlertDialog>
                                 </TableCell>
                             </TableRow>
                         ))}
@@ -176,8 +344,40 @@ const CounterTab = () => {
     );
 }
 
+const ServiceForm = ({ service, onSave, closeDialog }: { service?: Omit<Service, 'icon'> | null, onSave: (data: Omit<Service, 'icon'>) => void, closeDialog: () => void }) => {
+    const [id, setId] = React.useState(service?.id || '');
+    const [name, setName] = React.useState(service?.name || '');
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        onSave({ id, name });
+        closeDialog();
+    };
+
+    return (
+        <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-2">
+                <Label htmlFor="service-id">ID Layanan</Label>
+                <Input id="service-id" value={id} onChange={(e) => setId(e.target.value.toUpperCase())} required disabled={!!service} maxLength={1} />
+                 { !service && <p className="text-xs text-muted-foreground">ID Layanan adalah satu huruf unik (misal: D).</p> }
+            </div>
+            <div className="space-y-2">
+                <Label htmlFor="service-name">Nama Layanan</Label>
+                <Input id="service-name" value={name} onChange={(e) => setName(e.target.value)} required />
+            </div>
+            <DialogFooter>
+                <Button type="submit">Simpan</Button>
+            </DialogFooter>
+        </form>
+    );
+};
+
+
 const ServiceTab = () => {
-    const { state: { services } } = useQueue();
+    const { state: { services }, addService, updateService, deleteService } = useQueue();
+    const [isAddOpen, setIsAddOpen] = React.useState(false);
+    const [editingService, setEditingService] = React.useState<Omit<Service, 'icon'> | null>(null);
+
     return (
         <Card>
             <CardHeader className="flex flex-row items-center justify-between">
@@ -185,7 +385,15 @@ const ServiceTab = () => {
                     <CardTitle>Manajemen Layanan</CardTitle>
                     <CardDescription>Atur layanan yang dapat dipilih oleh pelanggan.</CardDescription>
                 </div>
-                <Button><PlusCircle className="mr-2"/> Tambah Layanan</Button>
+                <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+                    <DialogTrigger asChild>
+                        <Button><PlusCircle className="mr-2"/> Tambah Layanan</Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                        <DialogHeader><DialogTitle>Tambah Layanan Baru</DialogTitle></DialogHeader>
+                        <ServiceForm onSave={addService} closeDialog={() => setIsAddOpen(false)} />
+                    </DialogContent>
+                </Dialog>
             </CardHeader>
             <CardContent>
                 <Table>
@@ -202,8 +410,30 @@ const ServiceTab = () => {
                                 <TableCell className="font-medium">{s.id}</TableCell>
                                 <TableCell>{s.name}</TableCell>
                                 <TableCell className="text-right">
-                                    <Button variant="ghost" size="icon"><Edit className="h-4 w-4"/></Button>
-                                    <Button variant="ghost" size="icon" className="text-destructive"><Trash2 className="h-4 w-4"/></Button>
+                                    <Dialog open={editingService?.id === s.id} onOpenChange={(isOpen) => !isOpen && setEditingService(null)}>
+                                        <DialogTrigger asChild>
+                                            <Button variant="ghost" size="icon" onClick={() => setEditingService(s)}><Edit className="h-4 w-4"/></Button>
+                                        </DialogTrigger>
+                                        <DialogContent>
+                                            <DialogHeader><DialogTitle>Edit Layanan</DialogTitle></DialogHeader>
+                                            <ServiceForm service={s} onSave={updateService} closeDialog={() => setEditingService(null)} />
+                                        </DialogContent>
+                                    </Dialog>
+                                    <AlertDialog>
+                                        <AlertDialogTrigger asChild>
+                                            <Button variant="ghost" size="icon" className="text-destructive"><Trash2 className="h-4 w-4"/></Button>
+                                        </AlertDialogTrigger>
+                                        <AlertDialogContent>
+                                            <AlertDialogHeader>
+                                                <AlertDialogTitle>Anda yakin?</AlertDialogTitle>
+                                                <AlertDialogDescription>Tindakan ini tidak dapat dibatalkan. Ini akan menghapus layanan secara permanen.</AlertDialogDescription>
+                                            </AlertDialogHeader>
+                                            <AlertDialogFooter>
+                                                <AlertDialogCancel>Batal</AlertDialogCancel>
+                                                <AlertDialogAction onClick={() => deleteService(s.id)}>Hapus</AlertDialogAction>
+                                            </AlertDialogFooter>
+                                        </AlertDialogContent>
+                                    </AlertDialog>
                                 </TableCell>
                             </TableRow>
                         ))}

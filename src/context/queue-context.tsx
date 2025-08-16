@@ -1,7 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import React, { createContext, useContext, useState, useReducer, useEffect } from 'react';
+import React, { createContext, useContext, useReducer, useEffect } from 'react';
 
 export interface Service {
   id: string;
@@ -51,7 +51,16 @@ type Action =
   | { type: 'RESET_STATE' }
   | { type: 'SET_SERVICES', payload: Service[] }
   | { type: 'SET_COUNTERS', payload: Counter[] }
-  | { type: 'SET_STAFF', payload: Staff[] };
+  | { type: 'SET_STAFF', payload: Staff[] }
+  | { type: 'ADD_STAFF', payload: Staff }
+  | { type: 'UPDATE_STAFF', payload: Staff }
+  | { type: 'DELETE_STAFF', payload: string }
+  | { type: 'ADD_COUNTER', payload: Counter }
+  | { type: 'UPDATE_COUNTER', payload: Counter }
+  | { type: 'DELETE_COUNTER', payload: number }
+  | { type: 'ADD_SERVICE', payload: Service }
+  | { type: 'UPDATE_SERVICE', payload: Service }
+  | { type: 'DELETE_SERVICE', payload: string };
 
 
 const initialState: QueueState = {
@@ -129,6 +138,24 @@ function queueReducer(state: QueueState, action: Action): QueueState {
         return { ...state, counters: action.payload };
     case 'SET_STAFF':
         return { ...state, staff: action.payload };
+    case 'ADD_STAFF':
+        return { ...state, staff: [...state.staff, action.payload] };
+    case 'UPDATE_STAFF':
+        return { ...state, staff: state.staff.map(s => s.id === action.payload.id ? action.payload : s) };
+    case 'DELETE_STAFF':
+        return { ...state, staff: state.staff.filter(s => s.id !== action.payload) };
+    case 'ADD_COUNTER':
+        return { ...state, counters: [...state.counters, action.payload] };
+    case 'UPDATE_COUNTER':
+        return { ...state, counters: state.counters.map(c => c.id === action.payload.id ? action.payload : c) };
+    case 'DELETE_COUNTER':
+        return { ...state, counters: state.counters.filter(c => c.id !== action.payload) };
+    case 'ADD_SERVICE':
+        return { ...state, services: [...state.services, action.payload] };
+    case 'UPDATE_SERVICE':
+        return { ...state, services: state.services.map(s => s.id === action.payload.id ? action.payload : s) };
+    case 'DELETE_SERVICE':
+        return { ...state, services: state.services.filter(s => s.id !== action.payload) };
     case 'RESET_STATE':
       return initialState;
     default:
@@ -145,17 +172,21 @@ interface QueueContextType {
   setServices: (services: Service[]) => void;
   setCounters: (counters: Counter[]) => void;
   setStaff: (staff: Staff[]) => void;
+  addStaff: (staff: Omit<Staff, 'id'>) => void;
+  updateStaff: (staff: Staff) => void;
+  deleteStaff: (staffId: string) => void;
+  addCounter: (counter: Omit<Counter, 'id'>) => void;
+  updateCounter: (counter: Counter) => void;
+  deleteCounter: (counterId: number) => void;
+  addService: (service: Omit<Service, 'icon'>) => void;
+  updateService: (service: Omit<Service, 'icon'>) => void;
+  deleteService: (serviceId: string) => void;
 }
 
 const QueueContext = createContext<QueueContextType | undefined>(undefined);
 
 export const QueueProvider = ({ children }: { children: ReactNode }) => {
   const [state, dispatch] = useReducer(queueReducer, initialState);
-  const [isClient, setIsClient] = useState(false);
-
-  useEffect(() => {
-    setIsClient(true);
-  }, []);
 
   const addTicket = (service: Service): Ticket => {
     const serviceTickets = state.tickets.filter(t => t.service.id === service.id);
@@ -191,14 +222,47 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
   const setStaff = (staff: Staff[]) => {
       dispatch({type: 'SET_STAFF', payload: staff});
   }
+  
+  const addStaff = (staff: Omit<Staff, 'id'>) => {
+      const newStaff = { ...staff, id: new Date().toISOString() };
+      dispatch({ type: 'ADD_STAFF', payload: newStaff });
+  }
 
+  const updateStaff = (staff: Staff) => {
+      dispatch({ type: 'UPDATE_STAFF', payload: staff });
+  }
 
-  if (!isClient) {
-    return null; // or a loading spinner
+  const deleteStaff = (staffId: string) => {
+      dispatch({ type: 'DELETE_STAFF', payload: staffId });
+  }
+
+  const addCounter = (counter: Omit<Counter, 'id'>) => {
+    const newId = state.counters.length > 0 ? Math.max(...state.counters.map(c => c.id)) + 1 : 1;
+    dispatch({ type: 'ADD_COUNTER', payload: {...counter, id: newId } });
+  }
+
+  const updateCounter = (counter: Counter) => {
+      dispatch({ type: 'UPDATE_COUNTER', payload: counter });
+  }
+
+  const deleteCounter = (counterId: number) => {
+      dispatch({ type: 'DELETE_COUNTER', payload: counterId });
+  }
+
+  const addService = (service: Omit<Service, 'icon'>) => {
+      dispatch({ type: 'ADD_SERVICE', payload: {...service, icon: <></>} });
+  }
+
+  const updateService = (service: Omit<Service, 'icon'>) => {
+      dispatch({ type: 'UPDATE_SERVICE', payload: {...service, icon: <></>} });
+  }
+
+  const deleteService = (serviceId: string) => {
+      dispatch({ type: 'DELETE_SERVICE', payload: serviceId });
   }
 
   return (
-    <QueueContext.Provider value={{ state, addTicket, callNextTicket, completeTicket, recallTicket, setServices, setCounters, setStaff }}>
+    <QueueContext.Provider value={{ state, addTicket, callNextTicket, completeTicket, recallTicket, setServices, setCounters, setStaff, addStaff, updateStaff, deleteStaff, addCounter, updateCounter, deleteCounter, addService, updateService, deleteService }}>
       {children}
     </QueueContext.Provider>
   );
