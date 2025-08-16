@@ -5,11 +5,10 @@ import { useRouter } from 'next/navigation';
 import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Users, Briefcase, Ticket, Clock, LogOut, BarChart2, Settings, UserCog, Building, FileText, PlusCircle, Edit, Trash2, Film } from 'lucide-react';
+import { Users, Briefcase, Ticket, Clock, LogOut, BarChart2, Settings, UserCog, Building, FileText, PlusCircle, Edit, Trash2, Film, ChevronLeft, ChevronRight, Menu } from 'lucide-react';
 import BkpmLogo from '@/components/icons/bkpm-logo';
 import { useQueue } from '@/context/queue-context';
 import type { Staff, Counter, Service, User } from '@/context/queue-context';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
@@ -19,6 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/hooks/use-toast';
 import { getAuth } from 'firebase/auth';
 import { app } from '@/lib/firebase';
+import { cn } from '@/lib/utils';
 
 const chartData = [
   { name: '09:00', 'Layanan Konsultasi': 12, 'Pengajuan Perizinan': 20, 'Layanan Prioritas': 5 },
@@ -682,11 +682,24 @@ const ReportTab = () => {
     )
 }
 
+const navItems = [
+    { id: 'dashboard', label: 'Dasbor', icon: BarChart2 },
+    { id: 'staff', label: 'Petugas', icon: UserCog },
+    { id: 'counters', label: 'Loket', icon: Building },
+    { id: 'services', label: 'Layanan', icon: Settings },
+    { id: 'video', label: 'Video', icon: Film },
+    { id: 'reports', label: 'Laporan', icon: FileText },
+]
+
 export default function AdminPage() {
   const router = useRouter();
   const auth = getAuth(app);
   const { toast } = useToast();
   const { logoutUser, state } = useQueue();
+  const [activeTab, setActiveTab] = React.useState('dashboard');
+  const [isSidebarOpen, setIsSidebarOpen] = React.useState(true);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
+
 
   React.useEffect(() => {
     if(state.authLoaded && !state.currentUser) {
@@ -709,6 +722,18 @@ export default function AdminPage() {
     }
   };
 
+  const renderContent = () => {
+    switch(activeTab) {
+        case 'dashboard': return <DashboardTab />;
+        case 'staff': return <StaffTab />;
+        case 'counters': return <CounterTab />;
+        case 'services': return <ServiceTab />;
+        case 'video': return <VideoTab />;
+        case 'reports': return <ReportTab />;
+        default: return <DashboardTab />;
+    }
+  }
+
   if (!state.authLoaded || !state.currentUser) {
     return (
         <div className="flex items-center justify-center min-h-screen">
@@ -718,45 +743,94 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="flex flex-col min-h-screen bg-background">
-      <header className="bg-card shadow-sm sticky top-0 z-10">
-        <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-20">
-            <div className="flex items-center space-x-4">
-              <BkpmLogo className="h-10 w-10 text-primary" />
-              <h1 className="text-2xl font-bold text-primary tracking-tight">
-                Dasbor Admin
-              </h1>
+    <div className="flex min-h-screen bg-background">
+      {/* Sidebar */}
+      <aside className={cn(
+        "bg-card text-card-foreground border-r transition-all duration-300 ease-in-out",
+        "flex flex-col",
+        isSidebarOpen ? "w-64" : "w-20"
+      )}>
+        <div className="flex items-center justify-between h-20 border-b px-4">
+             <div className={cn("flex items-center gap-2 transition-opacity duration-300", isSidebarOpen ? 'opacity-100' : 'opacity-0')}>
+                <BkpmLogo className="h-8 w-8 text-primary" />
+                <h1 className="text-xl font-bold text-primary tracking-tight whitespace-nowrap">
+                    Dasbor Admin
+                </h1>
             </div>
-            <div className="flex items-center space-x-2">
-                <p className="text-sm text-muted-foreground hidden sm:block">Login sebagai {state.currentUser?.email}</p>
-                <Button variant="outline" onClick={handleLogout}>
-                <LogOut className="mr-2 h-4 w-4" />
-                Logout
-                </Button>
-            </div>
-          </div>
+             <Button variant="ghost" size="icon" onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="ml-auto">
+                 {isSidebarOpen ? <ChevronLeft /> : <ChevronRight />}
+            </Button>
         </div>
-      </header>
+        <nav className="flex-1 px-4 py-4 space-y-2">
+            {navItems.map(item => (
+                <Button
+                    key={item.id}
+                    variant={activeTab === item.id ? 'secondary' : 'ghost'}
+                    className={cn(
+                        "w-full justify-start",
+                        !isSidebarOpen && "justify-center"
+                    )}
+                    onClick={() => setActiveTab(item.id)}
+                >
+                    <item.icon className="h-5 w-5"/>
+                    <span className={cn(isSidebarOpen ? "ml-4" : "sr-only")}>{item.label}</span>
+                </Button>
+            ))}
+        </nav>
+        <div className="px-4 py-4 border-t">
+            <Button variant="outline" onClick={handleLogout} className="w-full">
+                <LogOut className="h-5 w-5"/>
+                <span className={cn(isSidebarOpen ? "ml-4" : "sr-only")}>Logout</span>
+            </Button>
+             <div className={cn("mt-4 text-center text-xs text-muted-foreground", !isSidebarOpen && "sr-only")}>
+                <p>Login sebagai</p>
+                <p className="font-semibold truncate">{state.currentUser?.email}</p>
+            </div>
+        </div>
+      </aside>
 
-      <main className="flex-1 container mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <Tabs defaultValue="dashboard">
-            <TabsList className="mb-4">
-                <TabsTrigger value="dashboard"><BarChart2 className="mr-2"/> Dasbor</TabsTrigger>
-                <TabsTrigger value="staff"><UserCog className="mr-2"/> Petugas</TabsTrigger>
-                <TabsTrigger value="counters"><Building className="mr-2"/> Loket</TabsTrigger>
-                <TabsTrigger value="services"><Settings className="mr-2"/> Layanan</TabsTrigger>
-                <TabsTrigger value="video"><Film className="mr-2"/> Video</TabsTrigger>
-                <TabsTrigger value="reports"><FileText className="mr-2"/> Laporan</TabsTrigger>
-            </TabsList>
-            <TabsContent value="dashboard"><DashboardTab /></TabsContent>
-            <TabsContent value="staff"><StaffTab /></TabsContent>
-            <TabsContent value="counters"><CounterTab /></TabsContent>
-            <TabsContent value="services"><ServiceTab /></TabsContent>
-            <TabsContent value="video"><VideoTab /></TabsContent>
-            <TabsContent value="reports"><ReportTab /></TabsContent>
-        </Tabs>
-      </main>
+      {/* Main Content */}
+       <div className="flex-1 flex flex-col">
+            <header className="bg-card shadow-sm sticky top-0 z-10 lg:hidden h-20 flex items-center px-4 justify-between">
+                 <div className="flex items-center gap-2">
+                    <BkpmLogo className="h-8 w-8 text-primary" />
+                    <h1 className="text-xl font-bold text-primary">Dasbor Admin</h1>
+                </div>
+                 <Button variant="ghost" size="icon" onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}>
+                    <Menu/>
+                </Button>
+            </header>
+            
+            {/* Mobile Menu */}
+             {isMobileMenuOpen && (
+                <div className="lg:hidden bg-card border-b">
+                    <nav className="flex flex-col p-4 space-y-1">
+                         {navItems.map(item => (
+                            <Button
+                                key={item.id}
+                                variant={activeTab === item.id ? 'secondary' : 'ghost'}
+                                className="w-full justify-start"
+                                onClick={() => {
+                                    setActiveTab(item.id);
+                                    setIsMobileMenuOpen(false);
+                                }}
+                            >
+                                <item.icon className="mr-2"/>
+                                <span>{item.label}</span>
+                            </Button>
+                        ))}
+                         <Button variant="outline" onClick={handleLogout} className="w-full justify-start">
+                             <LogOut className="mr-2"/>
+                            <span>Logout</span>
+                        </Button>
+                    </nav>
+                </div>
+            )}
+
+            <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto">
+               {renderContent()}
+            </main>
+        </div>
     </div>
   );
 }
