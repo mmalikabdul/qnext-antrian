@@ -21,7 +21,7 @@ import {
   Ticket as TicketIcon,
 } from 'lucide-react';
 import BkpmLogo from '@/components/icons/bkpm-logo';
-import type { Service } from '@/context/queue-context';
+import { useToast } from '@/hooks/use-toast';
 
 
 const serviceIcons: Record<string, React.ReactNode> = {
@@ -43,6 +43,7 @@ export default function StaffPage() {
   const router = useRouter();
   const { state, callNextTicket, completeTicket, recallTicket } = useQueue();
   const { tickets, nowServing, services } = state;
+  const { toast } = useToast();
 
   const currentServingTicket = nowServing && nowServing.counter === COUNTER_NUMBER ? nowServing.ticket : null;
 
@@ -57,18 +58,17 @@ export default function StaffPage() {
     router.push('/login');
   };
 
-  const handleCallNext = (serviceId: string) => {
+  const handleCallNext = async (serviceId: string) => {
     if(currentServingTicket) {
-      // You might want to show a toast or alert here
-      console.warn("Please complete the current ticket before calling the next one.");
+      toast({ title: "Perhatian", description: "Selesaikan tiket yang sedang dilayani terlebih dahulu.", variant: 'destructive'});
       return;
     }
-    callNextTicket(serviceId, COUNTER_NUMBER);
+    await callNextTicket(serviceId, COUNTER_NUMBER);
   };
   
-  const handleComplete = () => {
+  const handleComplete = async () => {
     if (currentServingTicket) {
-        completeTicket(currentServingTicket.number);
+        await completeTicket(currentServingTicket.id);
     }
   }
 

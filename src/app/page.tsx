@@ -14,10 +14,10 @@ import {
   Users,
   Monitor,
   LogIn,
-  Ticket,
+  Ticket as TicketIcon,
 } from 'lucide-react';
 import { useQueue } from '@/context/queue-context';
-import type { Service } from '@/context/queue-context';
+import type { Service, Ticket } from '@/context/queue-context';
 import TicketModal from '@/components/ticket-modal';
 import BkpmLogo from '@/components/icons/bkpm-logo';
 import Link from 'next/link';
@@ -25,8 +25,8 @@ import Link from 'next/link';
 const serviceIcons: Record<string, React.ReactNode> = {
   A: <Users className="h-12 w-12" />,
   B: <Briefcase className="h-12 w-12" />,
-  C: <Ticket className="h-12 w-12" />,
-  DEFAULT: <Ticket className="h-12 w-12" />,
+  C: <TicketIcon className="h-12 w-12" />,
+  DEFAULT: <TicketIcon className="h-12 w-12" />,
 };
 
 const getServiceIcon = (serviceId: string) => {
@@ -38,13 +38,15 @@ const getServiceIcon = (serviceId: string) => {
 export default function KioskPage() {
   const { state, addTicket } = useQueue();
   const { services } = state;
-  const [selectedTicket, setSelectedTicket] = React.useState<string | null>(null);
+  const [selectedTicket, setSelectedTicket] = React.useState<Ticket | null>(null);
   const [isModalOpen, setIsModalOpen] = React.useState(false);
 
-  const handleServiceSelection = (service: Service) => {
-    const newTicket = addTicket(service);
-    setSelectedTicket(newTicket.number);
-    setIsModalOpen(true);
+  const handleServiceSelection = async (service: Service) => {
+    const newTicket = await addTicket(service);
+    if (newTicket) {
+      setSelectedTicket(newTicket);
+      setIsModalOpen(true);
+    }
   };
 
   return (
@@ -119,7 +121,7 @@ export default function KioskPage() {
         <TicketModal
           isOpen={isModalOpen}
           onClose={() => setIsModalOpen(false)}
-          ticketNumber={selectedTicket}
+          ticketNumber={selectedTicket.number}
         />
       )}
     </>

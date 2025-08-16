@@ -1,17 +1,38 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import React, { createContext, useContext, useReducer, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { db } from '@/lib/firebase';
+import { 
+    collection, 
+    onSnapshot, 
+    addDoc, 
+    updateDoc, 
+    deleteDoc, 
+    doc, 
+    query, 
+    where, 
+    orderBy, 
+    limit, 
+    getDocs,
+    Timestamp,
+    serverTimestamp,
+    writeBatch
+} from 'firebase/firestore';
+import { useToast } from '@/hooks/use-toast';
 
+// Interfaces
 export interface Service {
   id: string;
   name: string;
-  icon: ReactNode;
+  icon?: ReactNode; // Icon is UI specific, won't be in Firestore
 }
 
 export interface Ticket {
+  id: string; // Firestore document ID
   number: string;
-  service: Service;
+  serviceId: string;
+  service: Service; // This will be enriched data
   timestamp: Date;
   status: 'waiting' | 'serving' | 'done';
 }
@@ -22,16 +43,30 @@ export interface ServingInfo {
 }
 
 export interface Staff {
-  id: string;
+  id: string; // Firestore document ID
   name: string;
   counters: number[];
 }
 
 export interface Counter {
-    id: number;
+    id: number; // Keep this as a number if it's used as such, but Firestore ID will be string
+    docId: string; // Firestore document ID
     name: string;
     status: 'open' | 'closed';
 }
+
+// Raw Firestore data types
+interface TicketDoc {
+    number: string;
+    serviceId: string;
+    timestamp: Timestamp;
+    status: 'waiting' | 'serving' | 'done';
+}
+interface NowServingDoc {
+    ticketId: string;
+    counter: number;
+}
+
 
 interface QueueState {
   tickets: Ticket[];
@@ -40,229 +75,267 @@ interface QueueState {
   counters: Counter[];
   services: Service[];
   staff: Staff[];
-  serviceCounters: Record<string, number>;
-}
-
-type Action =
-  | { type: 'ADD_TICKET'; payload: Ticket }
-  | { type: 'CALL_NEXT'; payload: { serviceId: string; counter: number } }
-  | { type: 'COMPLETE_TICKET'; payload: { ticketNumber: string } }
-  | { type: 'RECALL_TICKET' }
-  | { type: 'RESET_STATE' }
-  | { type: 'SET_SERVICES', payload: Service[] }
-  | { type: 'SET_COUNTERS', payload: Counter[] }
-  | { type: 'SET_STAFF', payload: Staff[] }
-  | { type: 'ADD_STAFF', payload: Staff }
-  | { type: 'UPDATE_STAFF', payload: Staff }
-  | { type: 'DELETE_STAFF', payload: string }
-  | { type: 'ADD_COUNTER', payload: Counter }
-  | { type: 'UPDATE_COUNTER', payload: Counter }
-  | { type: 'DELETE_COUNTER', payload: number }
-  | { type: 'ADD_SERVICE', payload: Service }
-  | { type: 'UPDATE_SERVICE', payload: Service }
-  | { type: 'DELETE_SERVICE', payload: string };
-
-
-const initialState: QueueState = {
-  tickets: [],
-  servingHistory: [],
-  nowServing: null,
-  counters: [
-      {id: 1, name: 'Loket 1', status: 'open'},
-      {id: 2, name: 'Loket 2', status: 'open'},
-      {id: 3, name: 'Loket 3', status: 'closed'},
-      {id: 4, name: 'Loket 4', status: 'open'},
-  ],
-  services: [
-    { id: 'A', name: 'Layanan Konsultasi', icon: 'Users' },
-    { id: 'B', name: 'Pengajuan Perizinan', icon: 'Briefcase' },
-    { id: 'C', name: 'Layanan Prioritas', icon: 'Ticket' },
-  ].map(s => ({...s, icon: <></>})),
-  staff: [
-      {id: '1', name: 'Budi', counters: [1]},
-      {id: '2', name: 'Ani', counters: [2]},
-      {id: '3', name: 'Candra', counters: [4]},
-  ],
-  serviceCounters: {},
-};
-
-function queueReducer(state: QueueState, action: Action): QueueState {
-  switch (action.type) {
-    case 'ADD_TICKET': {
-      return {
-        ...state,
-        tickets: [...state.tickets, action.payload],
-      };
-    }
-    case 'CALL_NEXT': {
-      const { serviceId, counter } = action.payload;
-      const waitingTickets = state.tickets.filter(
-        (t) => t.service.id === serviceId && t.status === 'waiting'
-      );
-
-      if (waitingTickets.length === 0) {
-        return state;
-      }
-
-      const nextTicket = waitingTickets[0];
-      const service = state.services.find(s => s.id === serviceId);
-      if(!service) return state;
-
-      const updatedNowServing = { ticket: { ...nextTicket, status: 'serving' as const, service }, counter };
-
-      return {
-        ...state,
-        nowServing: updatedNowServing,
-        tickets: state.tickets.map((t) =>
-          t.number === nextTicket.number ? { ...t, status: 'serving' as const } : t
-        ),
-        servingHistory: [updatedNowServing, ...state.servingHistory].slice(0, 5),
-      };
-    }
-    case 'COMPLETE_TICKET': {
-       return {
-        ...state,
-        tickets: state.tickets.map((t) =>
-          t.number === action.payload.ticketNumber ? { ...t, status: 'done' as const } : t
-        ),
-        nowServing: null,
-       }
-    }
-    case 'RECALL_TICKET': {
-        // This action doesn't change state but is useful for triggering effects like speech
-        return state;
-    }
-    case 'SET_SERVICES':
-        return { ...state, services: action.payload };
-    case 'SET_COUNTERS':
-        return { ...state, counters: action.payload };
-    case 'SET_STAFF':
-        return { ...state, staff: action.payload };
-    case 'ADD_STAFF':
-        return { ...state, staff: [...state.staff, action.payload] };
-    case 'UPDATE_STAFF':
-        return { ...state, staff: state.staff.map(s => s.id === action.payload.id ? action.payload : s) };
-    case 'DELETE_STAFF':
-        return { ...state, staff: state.staff.filter(s => s.id !== action.payload) };
-    case 'ADD_COUNTER':
-        return { ...state, counters: [...state.counters, action.payload] };
-    case 'UPDATE_COUNTER':
-        return { ...state, counters: state.counters.map(c => c.id === action.payload.id ? action.payload : c) };
-    case 'DELETE_COUNTER':
-        return { ...state, counters: state.counters.filter(c => c.id !== action.payload) };
-    case 'ADD_SERVICE':
-        return { ...state, services: [...state.services, action.payload] };
-    case 'UPDATE_SERVICE':
-        return { ...state, services: state.services.map(s => s.id === action.payload.id ? action.payload : s) };
-    case 'DELETE_SERVICE':
-        return { ...state, services: state.services.filter(s => s.id !== action.payload) };
-    case 'RESET_STATE':
-      return initialState;
-    default:
-      return state;
-  }
 }
 
 interface QueueContextType {
   state: QueueState;
-  addTicket: (service: Service) => Ticket;
-  callNextTicket: (serviceId: string, counter: number) => void;
-  completeTicket: (ticketNumber: string) => void;
+  addTicket: (service: Service) => Promise<Ticket | null>;
+  callNextTicket: (serviceId: string, counter: number) => Promise<void>;
+  completeTicket: (ticketId: string) => Promise<void>;
   recallTicket: () => void;
-  setServices: (services: Service[]) => void;
-  setCounters: (counters: Counter[]) => void;
-  setStaff: (staff: Staff[]) => void;
-  addStaff: (staff: Omit<Staff, 'id'>) => void;
-  updateStaff: (staff: Staff) => void;
-  deleteStaff: (staffId: string) => void;
-  addCounter: (counter: Omit<Counter, 'id'>) => void;
-  updateCounter: (counter: Counter) => void;
-  deleteCounter: (counterId: number) => void;
-  addService: (service: Omit<Service, 'icon'>) => void;
-  updateService: (service: Omit<Service, 'icon'>) => void;
-  deleteService: (serviceId: string) => void;
+  addStaff: (staff: Omit<Staff, 'id'>) => Promise<void>;
+  updateStaff: (staff: Staff) => Promise<void>;
+  deleteStaff: (staffId: string) => Promise<void>;
+  addCounter: (counter: Omit<Counter, 'id' | 'docId'>) => Promise<void>;
+  updateCounter: (counter: Counter) => Promise<void>;
+  deleteCounter: (counterDocId: string) => Promise<void>;
+  addService: (service: Omit<Service, 'id' | 'icon'> & { id: string }) => Promise<void>;
+  updateService: (service: Omit<Service, 'icon'>) => Promise<void>;
+  deleteService: (serviceId: string) => Promise<void>;
 }
 
 const QueueContext = createContext<QueueContextType | undefined>(undefined);
 
-export const QueueProvider = ({ children }: { children: ReactNode }) => {
-  const [state, dispatch] = useReducer(queueReducer, initialState);
+const enrichTickets = (tickets: Ticket[], services: Service[]): Ticket[] => {
+    return tickets.map(ticket => ({
+        ...ticket,
+        service: services.find(s => s.id === ticket.serviceId) || { id: ticket.serviceId, name: 'Unknown Service' }
+    }));
+};
 
-  const addTicket = (service: Service): Ticket => {
-    const serviceTickets = state.tickets.filter(t => t.service.id === service.id);
-    const newTicketNumber = `${service.id}-${String(serviceTickets.length + 1).padStart(3, '0')}`;
-    const newTicket: Ticket = {
-      number: newTicketNumber,
-      service,
-      timestamp: new Date(),
-      status: 'waiting',
+
+export const QueueProvider = ({ children }: { children: ReactNode }) => {
+  const [state, setState] = useState<QueueState>({
+    tickets: [],
+    servingHistory: [],
+    nowServing: null,
+    counters: [],
+    services: [],
+    staff: [],
+  });
+  const { toast } = useToast();
+
+  // Subscribe to Services
+  useEffect(() => {
+    const q = query(collection(db, 'services'));
+    const unsubscribe = onSnapshot(q, (querySnapshot) => {
+      const services: Service[] = [];
+      querySnapshot.forEach((doc) => {
+        services.push({ id: doc.id, ...doc.data() } as Service);
+      });
+      setState(prevState => ({...prevState, services}));
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Subscribe to Counters
+  useEffect(() => {
+    const q = query(collection(db, 'counters'), orderBy('id'));
+    const unsubscribe = onSnapshot(q, (querySnapshot) => {
+      const counters: Counter[] = [];
+      querySnapshot.forEach((doc) => {
+        const data = doc.data();
+        counters.push({ docId: doc.id, ...data } as Counter);
+      });
+      setState(prevState => ({...prevState, counters}));
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Subscribe to Staff
+  useEffect(() => {
+    const q = query(collection(db, 'staff'));
+    const unsubscribe = onSnapshot(q, (querySnapshot) => {
+      const staff: Staff[] = [];
+      querySnapshot.forEach((doc) => {
+        staff.push({ id: doc.id, ...doc.data() } as Staff);
+      });
+      setState(prevState => ({...prevState, staff}));
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Subscribe to Tickets
+  useEffect(() => {
+    if (state.services.length === 0) return; // Wait for services to load
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const q = query(collection(db, 'tickets'), where('timestamp', '>=', today), orderBy('timestamp'));
+    
+    const unsubscribe = onSnapshot(q, (querySnapshot) => {
+      const tickets: Ticket[] = [];
+      querySnapshot.forEach((doc) => {
+        const data = doc.data() as TicketDoc;
+        tickets.push({ 
+            id: doc.id, 
+            serviceId: data.serviceId,
+            timestamp: data.timestamp.toDate(),
+            ...data
+        } as Ticket);
+      });
+      setState(prevState => ({...prevState, tickets: enrichTickets(tickets, prevState.services)}));
+    });
+    return () => unsubscribe();
+  }, [state.services]);
+
+  // Subscribe to Now Serving
+  useEffect(() => {
+    if (state.tickets.length === 0) { // If no tickets, there's nothing to serve
+        if(state.nowServing !== null) {
+            setState(prevState => ({ ...prevState, nowServing: null }));
+        }
+        return;
     };
-    dispatch({ type: 'ADD_TICKET', payload: newTicket });
-    return newTicket;
+  
+    const q = query(collection(db, 'nowServing'), limit(1));
+    const unsubscribe = onSnapshot(q, (querySnapshot) => {
+      if (querySnapshot.empty) {
+        setState(prevState => ({ ...prevState, nowServing: null }));
+        return;
+      }
+      const nowServingDoc = querySnapshot.docs[0].data() as NowServingDoc;
+      const servingTicket = state.tickets.find(t => t.id === nowServingDoc.ticketId);
+
+      if (servingTicket) {
+        const nowServing: ServingInfo = { ticket: servingTicket, counter: nowServingDoc.counter };
+        setState(prevState => {
+            const history = [nowServing, ...(prevState.servingHistory || [])].filter((v,i,a)=>a.findIndex(t=>(t.ticket.id === v.ticket.id))===i).slice(0,5);
+            return { ...prevState, nowServing, servingHistory: history };
+        });
+      } else {
+         // Ticket is not in today's list, maybe it's from yesterday, clear nowServing
+         setState(prevState => ({ ...prevState, nowServing: null }));
+      }
+    });
+    return () => unsubscribe();
+  }, [state.tickets]);
+
+
+  const addTicket = async (service: Service): Promise<Ticket | null> => {
+    try {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const q = query(collection(db, 'tickets'), where('serviceId', '==', service.id), where('timestamp', '>=', today));
+        const serviceTicketsSnapshot = await getDocs(q);
+        const newTicketNumber = `${service.id}-${String(serviceTicketsSnapshot.size + 1).padStart(3, '0')}`;
+
+        const docRef = await addDoc(collection(db, 'tickets'), {
+            number: newTicketNumber,
+            serviceId: service.id,
+            timestamp: serverTimestamp(),
+            status: 'waiting',
+        });
+        
+        return {
+            id: docRef.id,
+            number: newTicketNumber,
+            service,
+            serviceId: service.id,
+            timestamp: new Date(),
+            status: 'waiting',
+        };
+    } catch (error) {
+        console.error("Error adding ticket: ", error);
+        toast({ title: 'Error', description: 'Gagal menambahkan tiket.', variant: 'destructive'});
+        return null;
+    }
   };
 
-  const callNextTicket = (serviceId: string, counter: number) => {
-    dispatch({ type: 'CALL_NEXT', payload: { serviceId, counter } });
+  const callNextTicket = async (serviceId: string, counter: number) => {
+    try {
+        const q = query(collection(db, 'tickets'), where('serviceId', '==', serviceId), where('status', '==', 'waiting'), orderBy('timestamp'), limit(1));
+        const waitingTicketsSnapshot = await getDocs(q);
+
+        if (waitingTicketsSnapshot.empty) {
+            toast({ title: 'Info', description: 'Tidak ada antrian untuk layanan ini.'});
+            return;
+        }
+
+        const nextTicketDoc = waitingTicketsSnapshot.docs[0];
+
+        const batch = writeBatch(db);
+
+        // Update ticket status
+        batch.update(doc(db, 'tickets', nextTicketDoc.id), { status: 'serving' });
+
+        // Set nowServing (delete old one first)
+        const nowServingSnapshot = await getDocs(collection(db, 'nowServing'));
+        nowServingSnapshot.forEach(doc => batch.delete(doc.ref));
+        const nowServingCol = collection(db, 'nowServing');
+        batch.set(doc(nowServingCol), { ticketId: nextTicketDoc.id, counter });
+        
+        await batch.commit();
+
+    } catch (error) {
+        console.error("Error calling next ticket: ", error);
+        toast({ title: 'Error', description: 'Gagal memanggil tiket berikutnya.', variant: 'destructive'});
+    }
   };
   
-  const completeTicket = (ticketNumber: string) => {
-    dispatch({ type: 'COMPLETE_TICKET', payload: { ticketNumber } });
+  const completeTicket = async (ticketId: string) => {
+    try {
+        const batch = writeBatch(db);
+        // Mark ticket as done
+        batch.update(doc(db, 'tickets', ticketId), { status: 'done' });
+        
+        // Clear nowServing
+        const nowServingSnapshot = await getDocs(query(collection(db, 'nowServing'), where('ticketId', '==', ticketId)));
+        nowServingSnapshot.forEach(doc => batch.delete(doc.ref));
+
+        await batch.commit();
+
+    } catch (error) {
+        console.error("Error completing ticket: ", error);
+        toast({ title: 'Error', description: 'Gagal menyelesaikan tiket.', variant: 'destructive'});
+    }
   };
   
   const recallTicket = () => {
-    dispatch({ type: 'RECALL_TICKET' });
+    // This is purely a UI trigger, now handled by useEffect on nowServing change in MonitorPage.
+    // If we need to force a re-render or some state change, it can be done here.
+    console.log("Recalling ticket:", state.nowServing?.ticket.number);
+  };
+
+  // --- Admin Functions ---
+  const addStaff = async (staff: Omit<Staff, 'id'>) => {
+      await addDoc(collection(db, 'staff'), staff);
+  }
+  const updateStaff = async (staff: Staff) => {
+      const { id, ...data } = staff;
+      await updateDoc(doc(db, 'staff', id), data);
+  }
+  const deleteStaff = async (staffId: string) => {
+      await deleteDoc(doc(db, 'staff', staffId));
   }
 
-  const setServices = (services: Service[]) => {
-      dispatch({type: 'SET_SERVICES', payload: services});
+  const addCounter = async (counter: Omit<Counter, 'id' | 'docId'>) => {
+      const q = query(collection(db, 'counters'), orderBy('id', 'desc'), limit(1));
+      const lastCounter = await getDocs(q);
+      const newId = lastCounter.empty ? 1 : lastCounter.docs[0].data().id + 1;
+      await addDoc(collection(db, 'counters'), {...counter, id: newId });
   }
-  const setCounters = (counters: Counter[]) => {
-      dispatch({type: 'SET_COUNTERS', payload: counters});
+  const updateCounter = async (counter: Counter) => {
+      const { docId, ...data } = counter;
+      await updateDoc(doc(db, 'counters', docId), data);
   }
-  const setStaff = (staff: Staff[]) => {
-      dispatch({type: 'SET_STAFF', payload: staff});
+  const deleteCounter = async (counterDocId: string) => {
+      await deleteDoc(doc(db, 'counters', counterDocId));
   }
   
-  const addStaff = (staff: Omit<Staff, 'id'>) => {
-      const newStaff = { ...staff, id: new Date().toISOString() };
-      dispatch({ type: 'ADD_STAFF', payload: newStaff });
+  const addService = async (service: Omit<Service, 'icon'>) => {
+      await addDoc(collection(db, 'services'), service);
+  }
+  const updateService = async (service: Omit<Service, 'icon'>) => {
+      const { id, ...data } = service;
+      await updateDoc(doc(db, 'services', id), data);
+  }
+  const deleteService = async (serviceId: string) => {
+      await deleteDoc(doc(db, 'services', serviceId));
   }
 
-  const updateStaff = (staff: Staff) => {
-      dispatch({ type: 'UPDATE_STAFF', payload: staff });
-  }
-
-  const deleteStaff = (staffId: string) => {
-      dispatch({ type: 'DELETE_STAFF', payload: staffId });
-  }
-
-  const addCounter = (counter: Omit<Counter, 'id'>) => {
-    const newId = state.counters.length > 0 ? Math.max(...state.counters.map(c => c.id)) + 1 : 1;
-    dispatch({ type: 'ADD_COUNTER', payload: {...counter, id: newId } });
-  }
-
-  const updateCounter = (counter: Counter) => {
-      dispatch({ type: 'UPDATE_COUNTER', payload: counter });
-  }
-
-  const deleteCounter = (counterId: number) => {
-      dispatch({ type: 'DELETE_COUNTER', payload: counterId });
-  }
-
-  const addService = (service: Omit<Service, 'icon'>) => {
-      dispatch({ type: 'ADD_SERVICE', payload: {...service, icon: <></>} });
-  }
-
-  const updateService = (service: Omit<Service, 'icon'>) => {
-      dispatch({ type: 'UPDATE_SERVICE', payload: {...service, icon: <></>} });
-  }
-
-  const deleteService = (serviceId: string) => {
-      dispatch({ type: 'DELETE_SERVICE', payload: serviceId });
-  }
 
   return (
-    <QueueContext.Provider value={{ state, addTicket, callNextTicket, completeTicket, recallTicket, setServices, setCounters, setStaff, addStaff, updateStaff, deleteStaff, addCounter, updateCounter, deleteCounter, addService, updateService, deleteService }}>
+    <QueueContext.Provider value={{ state, addTicket, callNextTicket, completeTicket, recallTicket, addStaff, updateStaff, deleteStaff, addCounter, updateCounter, deleteCounter, addService, updateService, deleteService }}>
       {children}
     </QueueContext.Provider>
   );
