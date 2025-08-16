@@ -17,7 +17,8 @@ import {
     getDocs,
     Timestamp,
     serverTimestamp,
-    writeBatch
+    writeBatch,
+    runTransaction
 } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 
@@ -248,34 +249,50 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
 
   const addTicket = async (service: Service): Promise<Ticket | null> => {
     try {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const q = query(collection(db, 'tickets'), where('serviceId', '==', service.id), where('timestamp', '>=', today));
-        const serviceTicketsSnapshot = await getDocs(q);
-        const newTicketNumber = `${service.id}-${String(serviceTicketsSnapshot.size + 1).padStart(3, '0')}`;
+        const todayStr = new Date().toISOString().split('T')[0]; // e.g., "2024-01-01"
+        const counterRef = doc(db, 'counters_daily', `${service.id}_${todayStr}`);
+        
+        let newTicketData: Ticket | null = null;
 
-        const docRef = await addDoc(collection(db, 'tickets'), {
-            number: newTicketNumber,
-            serviceId: service.id,
-            timestamp: serverTimestamp(),
-            status: 'waiting',
+        await runTransaction(db, async (transaction) => {
+            const counterDoc = await transaction.get(counterRef);
+            
+            let newCount = 1;
+            if (counterDoc.exists()) {
+                newCount = counterDoc.data().count + 1;
+            } else {
+                transaction.set(counterRef, { count: 1 });
+            }
+
+            const newTicketNumber = `${service.id}-${String(newCount).padStart(3, '0')}`;
+            
+            const newTicketRef = doc(collection(db, 'tickets'));
+            transaction.set(newTicketRef, {
+                number: newTicketNumber,
+                serviceId: service.id,
+                timestamp: serverTimestamp(),
+                status: 'waiting',
+            });
+            transaction.update(counterRef, { count: newCount });
+
+            newTicketData = {
+                id: newTicketRef.id,
+                number: newTicketNumber,
+                service: service,
+                serviceId: service.id,
+                timestamp: new Date(),
+                status: 'waiting'
+            };
         });
-        
-        // This is a client-side representation, so timestamp can be new Date()
-        const newTicketData = {
-            id: docRef.id,
-            number: newTicketNumber,
-            serviceId: service.id,
-            service: service,
-            timestamp: new Date(),
-            status: 'waiting' as const,
-        };
 
-        setState(prevState => ({
-            ...prevState,
-            tickets: enrichTickets([...prevState.tickets, newTicketData], prevState.services)
-        }));
-        
+        if (newTicketData) {
+            const finalTicketData = newTicketData as Ticket;
+            setState(prevState => ({
+                ...prevState,
+                tickets: enrichTickets([...prevState.tickets, finalTicketData], prevState.services)
+            }));
+        }
+
         return newTicketData;
 
     } catch (error) {
@@ -373,7 +390,12 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
       await updateDoc(doc(db, 'services', service.id), { name: service.name });
   }
   const deleteService = async (serviceId: string) => {
-      await deleteDoc(doc(db, 'services', serviceId));
+      const batch = writeBatch(db);
+      const serviceRef = doc(db, 'services', serviceId);
+      batch.delete(serviceRef);
+      // Optional: clean up daily counters for this service if needed, though they are namespaced by date
+      // For simplicity, we'll leave them. They won't be used if the service is gone.
+      await batch.commit();
   }
 
 
