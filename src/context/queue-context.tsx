@@ -571,7 +571,7 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
   return (
     <QueueContext.Provider value={{ state, loginUser, logoutUser, addTicket, callNextTicket, completeTicket, skipTicket, recallTicket, addStaff, updateStaff, deleteStaff, addCounter, updateCounter, deleteCounter, addService, updateService, deleteService, updateVideoUrl }}>
       {children}
-    </Queue-Context.Provider>
+    </QueueContext.Provider>
   );
 };
 
