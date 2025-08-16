@@ -22,12 +22,6 @@ import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertCircle } from 'lucide-react';
 
-// Demo users (in a real app, manage this in Firebase Auth console)
-const DUMMY_USERS = {
-    'admin@bkpm.go.id': { role: 'admin' },
-    'staff@bkpm.go.id': { role: 'staff' }
-};
-
 export default function LoginPage() {
   const router = useRouter();
   const { toast } = useToast();
@@ -41,18 +35,16 @@ export default function LoginPage() {
     e.preventDefault();
     setIsLoading(true);
     setError(null);
-    
-    // Hardcoded user role detection for demo purposes
-    const userRole = (DUMMY_USERS as any)[email]?.role;
-
-    if (!userRole) {
-        setError("User tidak ditemukan atau role tidak valid.");
-        setIsLoading(false);
-        return;
-    }
 
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const loggedInEmail = userCredential.user.email;
+      
+      let userRole = 'staff'; // Default role
+      if (loggedInEmail === 'admin@bkpm.go.id') {
+        userRole = 'admin';
+      }
+
       toast({
         title: 'Login Berhasil!',
         description: `Selamat datang kembali. Anda masuk sebagai ${userRole}.`,
@@ -135,7 +127,7 @@ export default function LoginPage() {
               </div>
             </div>
              <p className="text-sm text-muted-foreground text-center">
-                Gunakan <code className="font-mono bg-muted p-1 rounded">admin@bkpm.go.id</code> atau <code className="font-mono bg-muted p-1 rounded">staff@bkpm.go.id</code> dengan password <code className="font-mono bg-muted p-1 rounded">password</code> untuk demo.
+                Gunakan akun yang telah Anda daftarkan di Firebase Console.
             </p>
           </CardContent>
           <CardFooter>
