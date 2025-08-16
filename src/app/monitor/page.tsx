@@ -69,11 +69,10 @@ export default function MonitorPage() {
   const { state, recallTicket } = useQueue();
   const { nowServing, tickets, videoUrl } = state;
   const { speak } = useSpeech();
-  const lastCalledRef = useRef<string | null>(null);
+  const lastCalledTicketIdRef = useRef<string | null>(null);
   const [currentDate, setCurrentDate] = useState('');
   const [isRecalling, setIsRecalling] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
-
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -81,51 +80,48 @@ export default function MonitorPage() {
     }, 1000);
     return () => clearInterval(timer);
   }, []);
-  
 
   useEffect(() => {
-    // This effect handles the logic for playing sounds and speaking.
+    if (!nowServing) {
+      lastCalledTicketIdRef.current = null;
+      return;
+    }
     
-    const audio = audioRef.current;
-    if (!audio || !nowServing) return;
+    const { ticket, counter } = nowServing;
+    const ticketId = ticket.id;
+    const ticketNumber = ticket.number;
     
-    const ticketNumber = nowServing.ticket.number;
-    const counterNumber = nowServing.counter;
+    // Logic for new calls
+    if (ticketId !== lastCalledTicketIdRef.current) {
+        const audio = audioRef.current;
+        if (audio) {
+            const handleAudioEnd = () => {
+                const textToSpeak = `Nomor antrian, ${ticketNumber.split('').join(' ')}, silahkan menuju, ke loket, ${counter}`;
+                speak(textToSpeak);
+                audio.removeEventListener('ended', handleAudioEnd);
+            };
+            audio.addEventListener('ended', handleAudioEnd);
+            audio.play().catch(e => {
+                console.error("Audio play failed, falling back to speech only.", e);
+                handleAudioEnd();
+            });
+        }
+        lastCalledTicketIdRef.current = ticketId;
+    }
 
-    const handleAudioEnd = () => {
-      const textToSpeak = `Nomor antrian, ${ticketNumber.split('').join(' ')}, silahkan menuju, ke loket, ${counterNumber}`;
-      speak(textToSpeak);
-      lastCalledRef.current = ticketNumber;
-      audio.removeEventListener('ended', handleAudioEnd);
-    };
-    
-    const recallTicketId = state.recallInfo?.ticketId;
-    if (recallTicketId && recallTicketId === nowServing.ticket.id) {
-        // Handle recall visual cue
+    // Logic for recalls
+    const recallInfo = state.recallInfo;
+    if (recallInfo && recallInfo.ticketId === ticketId) {
         setIsRecalling(true);
-        const timer = setTimeout(() => setIsRecalling(false), 2000); // Flash for 2 seconds
-        
-        // On recall, only speak, don't play chime.
-        const textToSpeak = `Panggilan ulang untuk, nomor antrian, ${ticketNumber.split('').join(' ')}, silahkan menuju, ke loket, ${counterNumber}`;
+        const timer = setTimeout(() => setIsRecalling(false), 2000); // Visual cue for 2s
+
+        const textToSpeak = `Panggilan ulang untuk, nomor antrian, ${ticketNumber.split('').join(' ')}, silahkan menuju, ke loket, ${counter}`;
         speak(textToSpeak);
         
         return () => clearTimeout(timer);
     }
     
-    if (ticketNumber !== lastCalledRef.current) {
-        // This is a new ticket call
-        audio.addEventListener('ended', handleAudioEnd);
-        audio.play().catch(e => {
-            console.error("Audio play failed, likely due to browser autoplay policy.", e);
-            // Fallback to just speaking if audio fails to play
-            handleAudioEnd();
-        });
-    }
-    
-    return () => {
-        audio.removeEventListener('ended', handleAudioEnd);
-    }
-  }, [nowServing, speak, state.recallInfo]);
+  }, [nowServing, state.recallInfo, speak]);
 
 
   const waitingTickets = tickets.filter(t => t.status === 'waiting');
@@ -134,21 +130,33 @@ export default function MonitorPage() {
   const getFullVideoUrl = () => {
     if (!videoUrl) return '';
     try {
-        const url = new URL(videoUrl);
-        const listId = url.searchParams.get('list');
-        if (!listId) {
-             // Fallback for single video embed
-            const videoId = url.pathname.split('/').pop();
-            return `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&loop=1&controls=0&playlist=${videoId}`;
+      const url = new URL(videoUrl);
+      const params = new URLSearchParams(url.search);
+      params.set('autoplay', '1');
+      params.set('mute', '1');
+      params.set('loop', '1');
+      params.set('controls', '0');
+      
+      if (params.has('list')) {
+        // This is a playlist
+        url.pathname = '/embed/videoseries';
+      } else if (url.pathname.includes('/embed/')) {
+        // Already an embed link, just ensure playlist param for loop
+        const videoId = url.pathname.split('/embed/')[1];
+        if (!params.has('playlist')) {
+            params.set('playlist', videoId);
         }
-        
-        let embedUrl = `https://www.youtube.com/embed/videoseries?list=${listId}`;
-        embedUrl += '&autoplay=1&mute=1&loop=1&controls=0';
-        return embedUrl;
+      } else {
+        // Not a standard embed link, fallback might be needed
+        console.warn("Non-standard YouTube URL detected, trying to adapt.");
+      }
+      
+      url.search = params.toString();
+      return url.toString();
 
     } catch (e) {
-        console.error("Invalid YouTube URL:", e);
-        return ""; // Return empty string if URL is invalid
+      console.error("Invalid YouTube URL:", e);
+      return "";
     }
   }
 
@@ -166,7 +174,6 @@ export default function MonitorPage() {
         </Link>
         <div className="text-right">
             <p className="text-3xl font-semibold">{currentDate || 'Memuat tanggal...'}</p>
-            {/* <p className="text-5xl font-bold">10:30:45</p> */}
         </div>
       </header>
 
