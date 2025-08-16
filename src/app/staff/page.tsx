@@ -19,11 +19,13 @@ import {
   CheckCircle,
   Clock,
   Ticket as TicketIcon,
+  Building,
 } from 'lucide-react';
 import BkpmLogo from '@/components/icons/bkpm-logo';
 import { useToast } from '@/hooks/use-toast';
 import { getAuth } from 'firebase/auth';
 import { app } from '@/lib/firebase';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 
 const serviceIcons: Record<string, React.ReactNode> = {
@@ -39,16 +41,34 @@ const getServiceIcon = (serviceId: string) => {
 }
 
 
-const COUNTER_NUMBER = 1; // Static counter number for this demo staff member
-
 export default function StaffPage() {
   const router = useRouter();
   const { state, callNextTicket, completeTicket, recallTicket, logoutUser } = useQueue();
-  const { tickets, nowServing, services } = state;
+  const { tickets, nowServing, services, currentUser, counters, authLoaded } = state;
   const { toast } = useToast();
   const auth = getAuth(app);
+  
+  const [activeCounterId, setActiveCounterId] = React.useState<number | null>(null);
 
-  const currentServingTicket = nowServing && nowServing.counter === COUNTER_NUMBER ? nowServing.ticket : null;
+  React.useEffect(() => {
+    if (authLoaded && !currentUser) {
+        router.push('/login');
+    }
+    if (currentUser && currentUser.counters && currentUser.counters.length > 0) {
+        setActiveCounterId(currentUser.counters[0]);
+    }
+  }, [currentUser, authLoaded, router]);
+
+  const staffCounters = React.useMemo(() => {
+    return counters.filter(c => currentUser?.counters?.includes(c.id));
+  }, [counters, currentUser]);
+
+  const currentServingTicket = nowServing && nowServing.counter === activeCounterId ? nowServing.ticket : null;
+  
+  const servicesForActiveCounter = React.useMemo(() => {
+      if (!activeCounterId) return [];
+      return services.filter(service => service.servingCounters?.includes(activeCounterId));
+  }, [services, activeCounterId]);
 
   const waitingCountByService = services.reduce((acc, service) => {
     acc[service.id] = tickets.filter(
@@ -69,11 +89,15 @@ export default function StaffPage() {
   };
 
   const handleCallNext = async (serviceId: string) => {
-    if(currentServingTicket) {
+    if (!activeCounterId) {
+        toast({ title: "Error", description: "Pilih loket aktif terlebih dahulu.", variant: 'destructive'});
+        return;
+    }
+    if (currentServingTicket) {
       toast({ title: "Perhatian", description: "Selesaikan tiket yang sedang dilayani terlebih dahulu.", variant: 'destructive'});
       return;
     }
-    await callNextTicket(serviceId, COUNTER_NUMBER);
+    await callNextTicket(serviceId, activeCounterId);
   };
   
   const handleComplete = async () => {
@@ -81,7 +105,10 @@ export default function StaffPage() {
         await completeTicket(currentServingTicket.id);
     }
   }
-
+  
+  if (!authLoaded || !currentUser) {
+      return <div className="flex items-center justify-center min-h-screen">Memuat...</div>
+  }
 
   return (
     <div className="flex flex-col min-h-screen bg-background">
@@ -90,14 +117,30 @@ export default function StaffPage() {
           <div className="flex items-center justify-between h-20">
             <div className="flex items-center space-x-4">
               <BkpmLogo className="h-10 w-10 text-primary" />
-              <h1 className="text-2xl font-bold text-primary tracking-tight">
-                Panel Petugas - Loket {COUNTER_NUMBER}
-              </h1>
+              <div className="flex flex-col">
+                <h1 className="text-2xl font-bold text-primary tracking-tight">Panel Petugas</h1>
+                <p className="text-sm text-muted-foreground">{currentUser.name || currentUser.email}</p>
+              </div>
             </div>
-            <Button variant="outline" onClick={handleLogout}>
-              <LogOut className="mr-2 h-4 w-4" />
-              Logout
-            </Button>
+            <div className="flex items-center space-x-4">
+                {staffCounters.length > 0 && (
+                     <div className="flex items-center space-x-2">
+                         <Building className="h-5 w-5 text-muted-foreground"/>
+                         <Select onValueChange={(val) => setActiveCounterId(Number(val))} defaultValue={activeCounterId?.toString()}>
+                            <SelectTrigger className="w-[180px]">
+                                <SelectValue placeholder="Pilih Loket Aktif" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {staffCounters.map(c => <SelectItem key={c.id} value={c.id.toString()}>{c.name}</SelectItem>)}
+                            </SelectContent>
+                        </Select>
+                     </div>
+                )}
+                <Button variant="outline" onClick={handleLogout}>
+                    <LogOut className="mr-2 h-4 w-4" />
+                    Logout
+                </Button>
+            </div>
           </div>
         </div>
       </header>
@@ -109,29 +152,37 @@ export default function StaffPage() {
               <CardHeader>
                 <CardTitle>Kontrol Antrian</CardTitle>
                 <CardDescription>
-                  Panggil antrian berikutnya berdasarkan layanan.
+                  Panggil antrian berikutnya dari loket aktif: <span className="font-bold text-primary">{counters.find(c => c.id === activeCounterId)?.name}</span>
                 </CardDescription>
               </CardHeader>
-              <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {services.map((service) => (
-                  <Card key={service.id} className="p-4 flex flex-col justify-between">
-                    <div className="flex items-start justify-between">
-                        <div>
-                            <h3 className="font-semibold text-lg">{service.name}</h3>
-                            <p className="text-sm text-muted-foreground">Antrian: {waitingCountByService[service.id] || 0}</p>
-                        </div>
-                        {getServiceIcon(service.id)}
-                    </div>
-                    <Button
-                      onClick={() => handleCallNext(service.id)}
-                      disabled={(waitingCountByService[service.id] || 0) === 0 || !!currentServingTicket}
-                      className="w-full mt-4"
-                    >
-                      <PhoneCall className="mr-2 h-4 w-4" />
-                      Panggil Berikutnya
-                    </Button>
-                  </Card>
-                ))}
+              <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {activeCounterId ? (
+                    servicesForActiveCounter.length > 0 ? (
+                        servicesForActiveCounter.map((service) => (
+                          <Card key={service.id} className="p-4 flex flex-col justify-between">
+                            <div className="flex items-start justify-between">
+                                <div>
+                                    <h3 className="font-semibold text-lg">{service.name}</h3>
+                                    <p className="text-sm text-muted-foreground">Antrian: {waitingCountByService[service.id] || 0}</p>
+                                </div>
+                                {getServiceIcon(service.id)}
+                            </div>
+                            <Button
+                              onClick={() => handleCallNext(service.id)}
+                              disabled={(waitingCountByService[service.id] || 0) === 0 || !!currentServingTicket}
+                              className="w-full mt-4"
+                            >
+                              <PhoneCall className="mr-2 h-4 w-4" />
+                              Panggil Berikutnya
+                            </Button>
+                          </Card>
+                        ))
+                    ) : (
+                        <p className="col-span-full text-muted-foreground">Tidak ada layanan yang diatur untuk loket ini.</p>
+                    )
+                ) : (
+                     <p className="col-span-full text-muted-foreground">Pilih loket aktif untuk melihat layanan yang tersedia.</p>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -168,7 +219,7 @@ export default function StaffPage() {
                 ) : (
                   <div className="text-center py-10">
                     <p className="text-muted-foreground">
-                      Tidak ada antrian yang sedang dilayani.
+                      Tidak ada antrian yang sedang dilayani di loket ini.
                     </p>
                     <p className="text-sm text-muted-foreground/80 mt-2">
                         Pilih "Panggil Berikutnya" dari salah satu layanan.

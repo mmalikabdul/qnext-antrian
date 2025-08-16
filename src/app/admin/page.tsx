@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Users, Briefcase, Ticket, Clock, LogOut, BarChart2, Settings, UserCog, Building, FileText, PlusCircle, Edit, Trash2 } from 'lucide-react';
 import BkpmLogo from '@/components/icons/bkpm-logo';
 import { useQueue } from '@/context/queue-context';
-import type { Staff, Counter, Service } from '@/context/queue-context';
+import type { Staff, Counter, Service, User } from '@/context/queue-context';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from '@/components/ui/dialog';
@@ -19,6 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/hooks/use-toast';
 import { getAuth } from 'firebase/auth';
 import { app } from '@/lib/firebase';
+import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 
@@ -111,18 +112,27 @@ const DashboardTab = () => {
   );
 };
 
-const StaffForm = ({ staff, onSave, closeDialog }: { staff?: Staff | null, onSave: (data: Omit<Staff, 'id'> | Staff) => void, closeDialog: () => void }) => {
+const StaffForm = ({ staff, onSave, closeDialog }: { staff?: (Staff & User) | null, onSave: (data: any) => Promise<void>, closeDialog: () => void }) => {
     const { state: { counters } } = useQueue();
     const [name, setName] = React.useState(staff?.name || '');
+    const [email, setEmail] = React.useState(staff?.email || '');
+    const [password, setPassword] = React.useState('');
     const [assignedCounters, setAssignedCounters] = React.useState<number[]>(staff?.counters || []);
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        const staffData = { name, counters: assignedCounters };
-        if (staff?.id) {
-            onSave({ ...staffData, id: staff.id });
-        } else {
-            onSave(staffData);
+        const staffData: any = { name, counters: assignedCounters };
+        if (staff?.uid) { // Editing existing staff
+            staffData.uid = staff.uid;
+            await onSave(staffData);
+        } else { // Adding new staff
+            if (!email || !password) {
+                alert("Email dan password harus diisi untuk petugas baru.");
+                return;
+            }
+            staffData.email = email;
+            staffData.password = password;
+            await onSave(staffData);
         }
         closeDialog();
     };
@@ -133,6 +143,18 @@ const StaffForm = ({ staff, onSave, closeDialog }: { staff?: Staff | null, onSav
                 <Label htmlFor="staff-name">Nama Petugas</Label>
                 <Input id="staff-name" value={name} onChange={(e) => setName(e.target.value)} required />
             </div>
+            {!staff && (
+                <>
+                    <div className="space-y-2">
+                        <Label htmlFor="staff-email">Email Login</Label>
+                        <Input id="staff-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+                    </div>
+                     <div className="space-y-2">
+                        <Label htmlFor="staff-password">Password</Label>
+                        <Input id="staff-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+                    </div>
+                </>
+            )}
             <div className="space-y-2">
                 <Label>Loket yang Dilayani</Label>
                 <div className="grid grid-cols-3 gap-2">
@@ -164,28 +186,39 @@ const StaffForm = ({ staff, onSave, closeDialog }: { staff?: Staff | null, onSav
 
 
 const StaffTab = () => {
-    const { state: { staff, counters }, addStaff, updateStaff, deleteStaff } = useQueue();
+    const { state: { staff, counters, users }, addStaff, updateStaff, deleteStaff } = useQueue();
     const [isAddOpen, setIsAddOpen] = React.useState(false);
-    const [editingStaff, setEditingStaff] = React.useState<Staff | null>(null);
+    const [editingStaff, setEditingStaff] = React.useState<(Staff & User) | null>(null);
     const { toast } = useToast();
+    const auth = getAuth(app);
+    
+    const combinedStaffData = staff.map(s => {
+        const userData = users.find(u => u.uid === s.id);
+        return { ...s, ...userData };
+    });
 
-    const handleSaveStaff = async (data: Omit<Staff, 'id'> | Staff) => {
+    const handleSaveStaff = async (data: any) => {
         try {
-            if ('id' in data) {
-                await updateStaff(data);
+            if (data.uid) { // Editing
+                const staffData = { id: data.uid, name: data.name, counters: data.counters };
+                await updateStaff(staffData);
                 toast({ title: "Sukses", description: "Data petugas berhasil diperbarui." });
-            } else {
-                await addStaff(data);
-                toast({ title: "Sukses", description: "Petugas baru berhasil ditambahkan." });
+            } else { // Adding
+                await addStaff(data); // `addStaff` will handle auth creation and firestore doc
+                toast({ title: "Sukses", description: "Petugas baru berhasil ditambahkan dan didaftarkan." });
             }
-        } catch(e) {
-            toast({ title: "Error", description: "Gagal menyimpan data petugas.", variant: "destructive" });
+        } catch(e: any) {
+            console.error(e);
+            const message = e.code === 'auth/email-already-in-use' 
+                ? "Email sudah digunakan oleh akun lain."
+                : "Gagal menyimpan data petugas.";
+            toast({ title: "Error", description: message, variant: "destructive" });
         }
     }
 
     const handleDeleteStaff = async (id: string) => {
         try {
-            await deleteStaff(id);
+            await deleteStaff(id); // Deleting staff should also handle user deletion in the context
             toast({ title: "Sukses", description: "Petugas berhasil dihapus." });
         } catch(e) {
             toast({ title: "Error", description: "Gagal menghapus petugas.", variant: "destructive" });
@@ -201,11 +234,11 @@ const StaffTab = () => {
             <CardHeader className="flex flex-row items-center justify-between">
                 <div>
                     <CardTitle>Manajemen Petugas</CardTitle>
-                    <CardDescription>Tambah, edit, atau hapus data petugas.</CardDescription>
+                    <CardDescription>Tambah, edit, atau hapus data petugas dan akun login mereka.</CardDescription>
                 </div>
                  <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
                     <DialogTrigger asChild>
-                        <Button><PlusCircle className="mr-2"/> Tambah Petugas</Button>
+                        <Button onClick={() => setEditingStaff(null)}><PlusCircle className="mr-2"/> Tambah Petugas</Button>
                     </DialogTrigger>
                     <DialogContent>
                         <DialogHeader>
@@ -220,25 +253,27 @@ const StaffTab = () => {
                     <TableHeader>
                         <TableRow>
                             <TableHead>Nama</TableHead>
+                            <TableHead>Email</TableHead>
                             <TableHead>Loket yang Dilayani</TableHead>
                             <TableHead className="text-right">Aksi</TableHead>
                         </TableRow>
                     </TableHeader>
                     <TableBody>
-                        {staff.map(s => (
+                        {combinedStaffData.filter(s => s.role === 'staff').map(s => (
                             <TableRow key={s.id}>
                                 <TableCell className="font-medium">{s.name}</TableCell>
+                                 <TableCell>{s.email}</TableCell>
                                 <TableCell>{s.counters.map(getCounterName).join(', ')}</TableCell>
                                 <TableCell className="text-right">
                                      <Dialog open={editingStaff?.id === s.id} onOpenChange={(isOpen) => !isOpen && setEditingStaff(null)}>
                                         <DialogTrigger asChild>
-                                            <Button variant="ghost" size="icon" onClick={() => setEditingStaff(s)}><Edit className="h-4 w-4"/></Button>
+                                            <Button variant="ghost" size="icon" onClick={() => setEditingStaff(s as (Staff & User))}><Edit className="h-4 w-4"/></Button>
                                         </DialogTrigger>
                                         <DialogContent>
                                             <DialogHeader>
                                                 <DialogTitle>Edit Petugas</DialogTitle>
                                             </DialogHeader>
-                                            <StaffForm staff={s} onSave={handleSaveStaff} closeDialog={() => setEditingStaff(null)} />
+                                            <StaffForm staff={s as (Staff & User)} onSave={handleSaveStaff} closeDialog={() => setEditingStaff(null)} />
                                         </DialogContent>
                                     </Dialog>
                                     <AlertDialog>
@@ -248,7 +283,7 @@ const StaffTab = () => {
                                         <AlertDialogContent>
                                             <AlertDialogHeader>
                                                 <AlertDialogTitle>Anda yakin?</AlertDialogTitle>
-                                                <AlertDialogDescription>Tindakan ini tidak dapat dibatalkan. Ini akan menghapus petugas secara permanen.</AlertDialogDescription>
+                                                <AlertDialogDescription>Tindakan ini akan menghapus akun login dan data petugas secara permanen.</AlertDialogDescription>
                                             </AlertDialogHeader>
                                             <AlertDialogFooter>
                                                 <AlertDialogCancel>Batal</AlertDialogCancel>
@@ -405,12 +440,14 @@ const CounterTab = () => {
 }
 
 const ServiceForm = ({ service, onSave, closeDialog }: { service?: Service | null, onSave: (data: Omit<Service, 'icon'>) => void, closeDialog: () => void }) => {
+    const { state: { counters } } = useQueue();
     const [id, setId] = React.useState(service?.id || '');
     const [name, setName] = React.useState(service?.name || '');
+    const [assignedCounters, setAssignedCounters] = React.useState<number[]>(service?.servingCounters || []);
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        onSave({ id, name });
+        onSave({ id, name, servingCounters: assignedCounters });
         closeDialog();
     };
 
@@ -425,6 +462,28 @@ const ServiceForm = ({ service, onSave, closeDialog }: { service?: Service | nul
                 <Label htmlFor="service-name">Nama Layanan</Label>
                 <Input id="service-name" value={name} onChange={(e) => setName(e.target.value)} required />
             </div>
+            <div className="space-y-2">
+                <Label>Dapat Dilayani di Loket</Label>
+                <div className="grid grid-cols-3 gap-2">
+                    {counters.map(counter => (
+                        <div key={counter.id} className="flex items-center gap-2">
+                            <input
+                                type="checkbox"
+                                id={`service-counter-${counter.id}`}
+                                checked={assignedCounters.includes(counter.id)}
+                                onChange={(e) => {
+                                    if (e.target.checked) {
+                                        setAssignedCounters([...assignedCounters, counter.id]);
+                                    } else {
+                                        setAssignedCounters(assignedCounters.filter(id => id !== counter.id));
+                                    }
+                                }}
+                            />
+                            <Label htmlFor={`service-counter-${counter.id}`}>{counter.name}</Label>
+                        </div>
+                    ))}
+                </div>
+            </div>
             <DialogFooter>
                 <Button type="submit">Simpan</Button>
             </DialogFooter>
@@ -434,21 +493,21 @@ const ServiceForm = ({ service, onSave, closeDialog }: { service?: Service | nul
 
 
 const ServiceTab = () => {
-    const { state: { services }, addService, updateService, deleteService } = useQueue();
+    const { state: { services, counters }, addService, updateService, deleteService } = useQueue();
     const [isAddOpen, setIsAddOpen] = React.useState(false);
     const [editingService, setEditingService] = React.useState<Service | null>(null);
     const { toast } = useToast();
 
     const handleSaveService = async (data: Omit<Service, 'icon'>) => {
         try {
-            if (editingService) { // We are editing
+             if (editingService) {
                 await updateService(data);
                 toast({ title: "Sukses", description: "Layanan berhasil diperbarui." });
-            } else { // We are adding
-                const serviceRef = doc(db, 'services', data.id);
-                await setDoc(serviceRef, { name: data.name });
+            } else {
+                await addService(data);
                 toast({ title: "Sukses", description: "Layanan baru berhasil ditambahkan." });
             }
+            setEditingService(null);
         } catch(e) {
             console.error(e);
             toast({ title: "Error", description: "Gagal menyimpan layanan. Pastikan ID unik.", variant: "destructive" });
@@ -464,12 +523,16 @@ const ServiceTab = () => {
         }
     }
 
+    const getCounterName = (counterId: number) => {
+        return counters.find(c => c.id === counterId)?.name || `Loket ${counterId}`;
+    }
+
     return (
         <Card>
             <CardHeader className="flex flex-row items-center justify-between">
                 <div>
                     <CardTitle>Manajemen Layanan</CardTitle>
-                    <CardDescription>Atur layanan yang dapat dipilih oleh pelanggan.</CardDescription>
+                    <CardDescription>Atur layanan dan loket mana yang dapat melayaninya.</CardDescription>
                 </div>
                 <Dialog open={isAddOpen} onOpenChange={(isOpen) => {
                     if (!isOpen) setEditingService(null);
@@ -491,8 +554,9 @@ const ServiceTab = () => {
                 <Table>
                     <TableHeader>
                         <TableRow>
-                            <TableHead>ID Layanan</TableHead>
+                            <TableHead>ID</TableHead>
                             <TableHead>Nama Layanan</TableHead>
+                            <TableHead>Loket</TableHead>
                             <TableHead className="text-right">Aksi</TableHead>
                         </TableRow>
                     </TableHeader>
@@ -501,6 +565,7 @@ const ServiceTab = () => {
                             <TableRow key={s.id}>
                                 <TableCell className="font-medium">{s.id}</TableCell>
                                 <TableCell>{s.name}</TableCell>
+                                <TableCell>{s.servingCounters?.map(getCounterName).join(', ') || 'Belum diatur'}</TableCell>
                                 <TableCell className="text-right">
                                     <Button variant="ghost" size="icon" onClick={() => {
                                         setEditingService(s);
@@ -552,10 +617,14 @@ export default function AdminPage() {
   const { logoutUser, state } = useQueue();
 
   React.useEffect(() => {
-    if(!state.currentUser) {
-        // router.push('/login');
+    if(state.authLoaded && !state.currentUser) {
+        router.push('/login');
     }
-  }, [state.currentUser, router]);
+     if(state.authLoaded && state.currentUser?.role !== 'admin') {
+        toast({ title: "Akses Ditolak", description: "Hanya admin yang dapat mengakses halaman ini.", variant: "destructive" });
+        router.push('/login');
+    }
+  }, [state.currentUser, state.authLoaded, router, toast]);
 
   const handleLogout = async () => {
     try {
@@ -568,6 +637,14 @@ export default function AdminPage() {
     }
   };
 
+  if (!state.authLoaded || !state.currentUser) {
+    return (
+        <div className="flex items-center justify-center min-h-screen">
+            <p>Memuat data...</p>
+        </div>
+    );
+  }
+
   return (
     <div className="flex flex-col min-h-screen bg-background">
       <header className="bg-card shadow-sm sticky top-0 z-10">
@@ -579,10 +656,13 @@ export default function AdminPage() {
                 Dasbor Admin
               </h1>
             </div>
-            <Button variant="outline" onClick={handleLogout}>
-              <LogOut className="mr-2 h-4 w-4" />
-              Logout
-            </Button>
+            <div className="flex items-center space-x-2">
+                <p className="text-sm text-muted-foreground hidden sm:block">Login sebagai {state.currentUser?.email}</p>
+                <Button variant="outline" onClick={handleLogout}>
+                <LogOut className="mr-2 h-4 w-4" />
+                Logout
+                </Button>
+            </div>
           </div>
         </div>
       </header>

@@ -45,21 +45,29 @@ export default function LoginPage() {
       
       const userDocRef = doc(db, 'users', user.uid);
       const userDocSnap = await getDoc(userDocRef);
-
-      let userRole: 'admin' | 'staff' = 'staff'; // Default role
+      
+      let userRole: 'admin' | 'staff' = 'staff';
 
       if (userDocSnap.exists()) {
         userRole = userDocSnap.data().role;
       } else {
-        // If user document doesn't exist, create one.
-        // For this app, we'll assign 'admin' role based on a specific email.
-        if (user.email === 'admin@bkpm.go.id') {
-          userRole = 'admin';
-        }
+        // This case should ideally not happen if users are created from admin panel
+        // But as a fallback, we create a doc.
+        userRole = (user.email === 'admin@bkpm.go.id') ? 'admin' : 'staff';
         await setDoc(userDocRef, { email: user.email, role: userRole });
+        
+        // Also create a staff document
+        if (userRole === 'staff') {
+           const staffDocRef = doc(db, 'staff', user.uid);
+           await setDoc(staffDocRef, { name: user.email, counters: [] });
+        }
       }
+      
+      const staffDocRef = doc(db, 'staff', user.uid);
+      const staffDocSnap = await getDoc(staffDocRef);
+      const staffData = staffDocSnap.exists() ? staffDocSnap.data() : { name: user.email, counters: []};
 
-      loginUser({ uid: user.uid, email: user.email!, role: userRole });
+      loginUser({ uid: user.uid, email: user.email!, role: userRole, ...staffData });
 
       toast({
         title: 'Login Berhasil!',
@@ -71,13 +79,13 @@ export default function LoginPage() {
       } else {
         router.push('/staff');
       }
+
     } catch (error: any) {
       setIsLoading(false);
+      console.error("Login failed:", error);
       if (error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password' || error.code === 'auth/user-not-found') {
-        console.error("Login failed: Invalid credentials provided.", error);
         setError('Email atau password salah. Silakan coba lagi.');
       } else {
-        console.error("An unexpected error occurred during login:", error);
         setError('Terjadi kesalahan saat login. Silakan coba lagi nanti.');
       }
     }
@@ -144,7 +152,7 @@ export default function LoginPage() {
               </div>
             </div>
              <p className="text-sm text-muted-foreground text-center">
-                Gunakan akun yang telah Anda daftarkan di Firebase Console.
+                Gunakan akun yang telah didaftarkan oleh Admin.
             </p>
           </CardContent>
           <CardFooter>

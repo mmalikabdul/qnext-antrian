@@ -2,7 +2,8 @@
 
 import type { ReactNode } from 'react';
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { db } from '@/lib/firebase';
+import { db, app } from '@/lib/firebase';
+import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword } from 'firebase/auth';
 import { 
     collection, 
     onSnapshot, 
@@ -19,7 +20,8 @@ import {
     serverTimestamp,
     writeBatch,
     runTransaction,
-    setDoc
+    setDoc,
+    getDoc,
 } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 
@@ -27,6 +29,7 @@ import { useToast } from '@/hooks/use-toast';
 export interface Service {
   id: string;
   name: string;
+  servingCounters: number[];
   icon?: ReactNode; // Icon is UI specific, won't be in Firestore
 }
 
@@ -45,13 +48,13 @@ export interface ServingInfo {
 }
 
 export interface Staff {
-  id: string; // Firestore document ID
+  id: string; // Firestore document ID, should be same as User UID
   name: string;
   counters: number[];
 }
 
 export interface Counter {
-    id: number; // Keep this as a number if it's used as such, but Firestore ID will be string
+    id: number;
     docId: string; // Firestore document ID
     name: string;
     status: 'open' | 'closed';
@@ -61,6 +64,8 @@ export interface User {
   uid: string;
   email: string;
   role: 'admin' | 'staff';
+  name?: string;
+  counters?: number[];
 }
 
 
@@ -75,6 +80,10 @@ interface NowServingDoc {
     ticketId: string;
     counter: number;
 }
+interface ServiceDoc {
+    name: string;
+    servingCounters: number[];
+}
 
 
 interface QueueState {
@@ -84,7 +93,9 @@ interface QueueState {
   counters: Counter[];
   services: Service[];
   staff: Staff[];
+  users: User[];
   currentUser: User | null;
+  authLoaded: boolean;
 }
 
 interface QueueContextType {
@@ -95,13 +106,13 @@ interface QueueContextType {
   callNextTicket: (serviceId: string, counter: number) => Promise<void>;
   completeTicket: (ticketId: string) => Promise<void>;
   recallTicket: () => void;
-  addStaff: (staff: Omit<Staff, 'id'>) => Promise<void>;
+  addStaff: (staffData: any) => Promise<void>;
   updateStaff: (staff: Staff) => Promise<void>;
   deleteStaff: (staffId: string) => Promise<void>;
   addCounter: (counter: Omit<Counter, 'id' | 'docId'>) => Promise<void>;
   updateCounter: (counter: Counter) => Promise<void>;
   deleteCounter: (counterDocId: string) => Promise<void>;
-  addService: (service: Omit<Service, 'id' | 'icon'> & { id: string }) => Promise<void>;
+  addService: (service: Omit<Service, 'icon' | 'id'> & { id: string }) => Promise<void>;
   updateService: (service: Omit<Service, 'icon'>) => Promise<void>;
   deleteService: (serviceId: string) => Promise<void>;
 }
@@ -111,7 +122,7 @@ const QueueContext = createContext<QueueContextType | undefined>(undefined);
 const enrichTickets = (tickets: Ticket[], services: Service[]): Ticket[] => {
     return tickets.map(ticket => ({
         ...ticket,
-        service: services.find(s => s.id === ticket.serviceId) || { id: ticket.serviceId, name: 'Unknown Service' }
+        service: services.find(s => s.id === ticket.serviceId) || { id: ticket.serviceId, name: 'Layanan tidak diketahui', servingCounters: [] }
     }));
 };
 
@@ -124,9 +135,34 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
     counters: [],
     services: [],
     staff: [],
+    users: [],
     currentUser: null,
+    authLoaded: false,
   });
   const { toast } = useToast();
+  const auth = getAuth(app);
+  
+  // Auth listener
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+        if (user) {
+            const userDocRef = doc(db, 'users', user.uid);
+            const userDocSnap = await getDoc(userDocRef);
+            if (userDocSnap.exists()) {
+                const userData = userDocSnap.data() as Omit<User, 'uid'>;
+                const staffDocRef = doc(db, 'staff', user.uid);
+                const staffDocSnap = await getDoc(staffDocRef);
+                const staffData = staffDocSnap.exists() ? staffDocSnap.data() as Omit<Staff, 'id'> : { name: userData.email, counters: [] };
+                
+                setState(prevState => ({ ...prevState, currentUser: { uid: user.uid, ...userData, ...staffData }, authLoaded: true }));
+            }
+        } else {
+            setState(prevState => ({ ...prevState, currentUser: null, authLoaded: true }));
+        }
+    });
+    return () => unsubscribe();
+  }, [auth]);
+
 
   const loginUser = (user: User) => {
     if (user && user.uid && user.email && user.role) {
@@ -147,13 +183,26 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
       const services: Service[] = [];
       querySnapshot.forEach((doc) => {
-        const data = doc.data();
-        services.push({ id: doc.id, name: data.name } as Service);
+        const data = doc.data() as ServiceDoc;
+        services.push({ id: doc.id, ...data } as Service);
       });
       setState(prevState => ({...prevState, services}));
     }, (error) => {
       console.error("Error fetching services:", error);
     });
+    return () => unsubscribe();
+  }, []);
+  
+  // Subscribe to Users
+  useEffect(() => {
+    const q = query(collection(db, 'users'));
+    const unsubscribe = onSnapshot(q, (querySnapshot) => {
+        const users: User[] = [];
+        querySnapshot.forEach((doc) => {
+            users.push({ uid: doc.id, ...doc.data() } as User);
+        });
+        setState(prevState => ({...prevState, users}));
+    }, (error) => console.error("Error fetching users:", error));
     return () => unsubscribe();
   }, []);
 
@@ -190,7 +239,7 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
 
   // Subscribe to Tickets
   useEffect(() => {
-    if (state.services.length === 0) return; // Wait for services to load
+    if (state.services.length === 0) return;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const q = query(collection(db, 'tickets'), where('timestamp', '>=', today), orderBy('timestamp'));
@@ -215,10 +264,8 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
 
   // Subscribe to Now Serving
   useEffect(() => {
-    if (state.tickets.length === 0) { // If no tickets, there's nothing to serve
-        if(state.nowServing !== null) {
-            setState(prevState => ({ ...prevState, nowServing: null }));
-        }
+    if (state.tickets.length === 0 && state.nowServing !== null) {
+        setState(prevState => ({ ...prevState, nowServing: null }));
         return;
     };
   
@@ -238,7 +285,6 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
             return { ...prevState, nowServing, servingHistory: history };
         });
       } else {
-         // Ticket is not in today's list, maybe it's from yesterday, clear nowServing
          setState(prevState => ({ ...prevState, nowServing: null }));
       }
     }, (error) => {
@@ -250,7 +296,7 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
 
   const addTicket = async (service: Service): Promise<Ticket | null> => {
     try {
-        const todayStr = new Date().toISOString().split('T')[0]; // e.g., "2024-01-01"
+        const todayStr = new Date().toISOString().split('T')[0];
         const counterRef = doc(db, 'counters_daily', `${service.id}_${todayStr}`);
         
         let newTicketData: Ticket | null = null;
@@ -261,8 +307,6 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
             let newCount = 1;
             if (counterDoc.exists()) {
                 newCount = counterDoc.data().count + 1;
-            } else {
-                transaction.set(counterRef, { count: 1 });
             }
 
             const newTicketNumber = `${service.id}-${String(newCount).padStart(3, '0')}`;
@@ -274,7 +318,7 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
                 timestamp: serverTimestamp(),
                 status: 'waiting',
             });
-            transaction.update(counterRef, { count: newCount });
+            transaction.set(counterRef, { count: newCount });
 
             newTicketData = {
                 id: newTicketRef.id,
@@ -287,14 +331,8 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
         });
 
         if (newTicketData) {
-            const finalTicketData = newTicketData as Ticket;
-            toast({ title: "Sukses", description: `Tiket ${finalTicketData.number} berhasil dibuat.` });
-            setState(prevState => ({
-                ...prevState,
-                tickets: enrichTickets([...prevState.tickets, finalTicketData], prevState.services)
-            }));
+             toast({ title: "Sukses", description: `Tiket ${newTicketData.number} berhasil dibuat.` });
         }
-
         return newTicketData;
 
     } catch (error) {
@@ -306,7 +344,6 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
 
   const callNextTicket = async (serviceId: string, counter: number) => {
     try {
-        // Find the next ticket from the local state
         const nextTicket = state.tickets
             .filter(t => t.serviceId === serviceId && t.status === 'waiting')
             .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
@@ -318,16 +355,13 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
         }
 
         const batch = writeBatch(db);
-
-        // Update ticket status
         batch.update(doc(db, 'tickets', nextTicket.id), { status: 'serving' });
 
-        // Set nowServing (delete old one first)
         const nowServingSnapshot = await getDocs(collection(db, 'nowServing'));
         nowServingSnapshot.forEach(doc => batch.delete(doc.ref));
         
         const nowServingCol = collection(db, 'nowServing');
-        const nowServingRef = doc(nowServingCol); // Create a new document reference
+        const nowServingRef = doc(nowServingCol);
         batch.set(nowServingRef, { ticketId: nextTicket.id, counter });
         
         await batch.commit();
@@ -342,10 +376,8 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
   const completeTicket = async (ticketId: string) => {
     try {
         const batch = writeBatch(db);
-        // Mark ticket as done
         batch.update(doc(db, 'tickets', ticketId), { status: 'done' });
         
-        // Clear nowServing if it's the one being completed
         const nowServingSnapshot = await getDocs(query(collection(db, 'nowServing'), where('ticketId', '==', ticketId)));
         nowServingSnapshot.forEach(doc => batch.delete(doc.ref));
 
@@ -359,8 +391,6 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
   };
   
   const recallTicket = () => {
-    // This is purely a UI trigger, now handled by useEffect on nowServing change in MonitorPage.
-    // If we need to force a re-render or some state change, it can be done here.
     if(state.nowServing) {
         toast({ title: "Panggilan Ulang", description: `Memanggil kembali nomor antrian ${state.nowServing.ticket.number}.`})
         console.log("Recalling ticket:", state.nowServing?.ticket.number);
@@ -368,15 +398,38 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
   };
 
   // --- Admin Functions ---
-  const addStaff = async (staff: Omit<Staff, 'id'>) => {
-      await addDoc(collection(db, 'staff'), staff);
+  const addStaff = async (staffData: any) => {
+    const { email, password, name, counters } = staffData;
+    const auth = getAuth(app);
+    // Create user in Firebase Auth
+    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+    const user = userCredential.user;
+
+    const batch = writeBatch(db);
+
+    // Create user document in 'users' collection
+    const userDocRef = doc(db, 'users', user.uid);
+    batch.set(userDocRef, { email, role: 'staff' });
+    
+    // Create staff document in 'staff' collection
+    const staffDocRef = doc(db, 'staff', user.uid);
+    batch.set(staffDocRef, { name, counters });
+
+    await batch.commit();
   }
   const updateStaff = async (staff: Staff) => {
       const { id, ...data } = staff;
       await updateDoc(doc(db, 'staff', id), data);
   }
   const deleteStaff = async (staffId: string) => {
-      await deleteDoc(doc(db, 'staff', staffId));
+      // This is complex because it requires deleting a Firebase Auth user,
+      // which should be done via a backend function (e.g., Cloud Function) for security.
+      // For this demo, we'll just delete the Firestore documents.
+      const batch = writeBatch(db);
+      batch.delete(doc(db, 'staff', staffId));
+      batch.delete(doc(db, 'users', staffId));
+      await batch.commit();
+      console.warn(`User with UID ${staffId} deleted from Firestore, but not from Firebase Auth.`);
   }
 
   const addCounter = async (counter: Omit<Counter, 'id' | 'docId'>) => {
@@ -393,11 +446,11 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
       await deleteDoc(doc(db, 'counters', counterDocId));
   }
   
-  const addService = async (service: Omit<Service, 'icon' | 'name'> & {id: string, name: string}) => {
-      await setDoc(doc(db, 'services', service.id), { name: service.name });
+  const addService = async (service: Omit<Service, 'icon' | 'id'> & { id: string }) => {
+      await setDoc(doc(db, 'services', service.id), { name: service.name, servingCounters: service.servingCounters || [] });
   }
   const updateService = async (service: Omit<Service, 'icon'>) => {
-      await updateDoc(doc(db, 'services', service.id), { name: service.name });
+      await updateDoc(doc(db, 'services', service.id), { name: service.name, servingCounters: service.servingCounters || [] });
   }
   const deleteService = async (serviceId: string) => {
     try {
@@ -408,7 +461,7 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
 
         const todayStr = new Date().toISOString().split('T')[0];
         const dailyCounterRef = doc(db, 'counters_daily', `${serviceId}_${todayStr}`);
-        batch.delete(dailyCounterRef); // Also delete today's counter
+        batch.delete(dailyCounterRef);
 
         await batch.commit();
         toast({ title: "Sukses", description: "Layanan berhasil dihapus." });
