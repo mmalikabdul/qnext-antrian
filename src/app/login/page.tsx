@@ -46,14 +46,13 @@ export default function LoginPage() {
       const userDocRef = doc(db, 'users', user.uid);
       const userDocSnap = await getDoc(userDocRef);
 
-      let userRole = 'staff'; // Default role
+      let userRole: 'admin' | 'staff' = 'staff'; // Default role
 
       if (userDocSnap.exists()) {
         userRole = userDocSnap.data().role;
       } else {
         // If user document doesn't exist, create one.
         // For this app, we'll assign 'admin' role based on a specific email.
-        // In a real-world scenario, you might have a different way of assigning initial roles.
         if (user.email === 'admin@bkpm.go.id') {
           userRole = 'admin';
         }
@@ -73,7 +72,7 @@ export default function LoginPage() {
         router.push('/staff');
       }
     } catch (error: any) {
-      console.error(error);
+      console.error("Login error details:", error);
       if (error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password' || error.code === 'auth/user-not-found') {
         setError('Email atau password salah. Silakan coba lagi.');
       } else {
