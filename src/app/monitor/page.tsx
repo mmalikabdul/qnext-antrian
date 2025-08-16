@@ -123,22 +123,20 @@ export default function MonitorPage() {
 
       <main className="flex-1 grid grid-cols-12 grid-rows-6 gap-6 p-6">
         {/* Video Player */}
-        <div className="col-span-8 row-span-4 rounded-lg overflow-hidden shadow-2xl">
-           {videoUrl ? (
-                <iframe
-                    className="w-full h-full"
-                    src={getFullVideoUrl()}
-                    title="YouTube video player"
-                    frameBorder="0"
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                    allowFullScreen>
-                </iframe>
-            ) : (
-                <div className="w-full h-full bg-black flex items-center justify-center">
-                    <p className="text-primary-foreground">Video tidak tersedia.</p>
-                </div>
-            )}
-        </div>
+        {videoUrl ? (
+            <iframe
+                className="col-span-8 row-span-4 rounded-lg overflow-hidden shadow-2xl w-full h-full"
+                src={getFullVideoUrl()}
+                title="YouTube video player"
+                frameBorder="0"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen>
+            </iframe>
+        ) : (
+            <div className="col-span-8 row-span-4 rounded-lg overflow-hidden shadow-2xl bg-black flex items-center justify-center">
+                <p className="text-primary-foreground">Video tidak tersedia.</p>
+            </div>
+        )}
 
         {/* Now Serving */}
         <Card className="col-span-4 row-span-6 bg-background text-foreground flex flex-col shadow-2xl animate-fade-in">
