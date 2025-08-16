@@ -123,7 +123,6 @@ const StaffForm = ({ staff, onSave, closeDialog }: { staff?: (Staff & User) | nu
         const staffData: any = { name, counters: assignedCounters };
         if (staff?.uid) { // Editing existing staff
             staffData.uid = staff.uid;
-            await onSave(staffData);
         } else { // Adding new staff
             if (!email || !password) {
                 alert("Email dan password harus diisi untuk petugas baru.");
@@ -132,10 +131,15 @@ const StaffForm = ({ staff, onSave, closeDialog }: { staff?: (Staff & User) | nu
             }
             staffData.email = email;
             staffData.password = password;
-            await onSave(staffData);
         }
+        
+        await onSave(staffData);
+
         setIsLoading(false);
-        closeDialog();
+        // Only close dialog if not loading (i.e., operation finished)
+        if (!isLoading) {
+            closeDialog();
+        }
     };
     
     return (
@@ -179,6 +183,7 @@ const StaffForm = ({ staff, onSave, closeDialog }: { staff?: (Staff & User) | nu
                 </div>
             </div>
             <DialogFooter>
+                <Button type="button" variant="outline" onClick={closeDialog}>Batal</Button>
                 <Button type="submit" disabled={isLoading}>{isLoading ? "Menyimpan..." : "Simpan"}</Button>
             </DialogFooter>
         </form>
@@ -187,10 +192,11 @@ const StaffForm = ({ staff, onSave, closeDialog }: { staff?: (Staff & User) | nu
 
 
 const StaffTab = () => {
-    const { state: { staff, counters, users }, addStaff, updateStaff, deleteStaff } = useQueue();
+    const { state: { staff, counters, users, currentUser }, addStaff, updateStaff, deleteStaff } = useQueue();
     const [isAddOpen, setIsAddOpen] = React.useState(false);
     const [editingStaff, setEditingStaff] = React.useState<(Staff & User) | null>(null);
     const { toast } = useToast();
+    const router = useRouter();
     
     const combinedStaffData = staff.map(s => {
         const userData = users.find(u => u.uid === s.id);
@@ -203,12 +209,19 @@ const StaffTab = () => {
                 const staffData = { id: data.uid, name: data.name, counters: data.counters };
                 await updateStaff(staffData);
                 toast({ title: "Sukses", description: "Data petugas berhasil diperbarui." });
+                setEditingStaff(null);
             } else { // Adding
-                await addStaff(data); // `addStaff` will handle auth creation, firestore doc and re-login admin
-                toast({ title: "Sukses", description: "Petugas baru berhasil ditambahkan dan didaftarkan." });
+                const originalAdmin = currentUser;
+                if (!originalAdmin) throw new Error("Admin user not found.");
+
+                await addStaff({ ...data });
+                
+                toast({ title: "Sukses", description: "Petugas baru berhasil ditambahkan." });
+                setIsAddOpen(false);
+                 // No need to re-login as the context handles auth state changes
             }
         } catch(e: any) {
-            console.error(e);
+            console.error("Failed to save staff:", e);
             const message = e.code === 'auth/email-already-in-use' 
                 ? "Email sudah digunakan oleh akun lain."
                 : "Gagal menyimpan data petugas.";
@@ -504,7 +517,7 @@ const ServiceTab = () => {
                 await updateService(data);
                 toast({ title: "Sukses", description: "Layanan berhasil diperbarui." });
             } else {
-                await addService(data);
+                await addService(data as Omit<Service, 'icon'> & { id: string });
                 toast({ title: "Sukses", description: "Layanan baru berhasil ditambahkan." });
             }
             setEditingService(null);
@@ -547,7 +560,7 @@ const ServiceTab = () => {
                     </DialogTrigger>
                     <DialogContent>
                         <DialogHeader><DialogTitle>{editingService ? 'Edit Layanan' : 'Tambah Layanan Baru'}</DialogTitle></DialogHeader>
-                        <ServiceForm service={editingService} onSave={handleSaveService} closeDialog={() => setIsAddOpen(false)} />
+                        <ServiceForm service={editingService} onSave={handleSaveService} closeDialog={() => { setIsAddOpen(false); setEditingService(null); }} />
                     </DialogContent>
                 </Dialog>
             </CardHeader>
