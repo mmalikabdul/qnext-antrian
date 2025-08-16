@@ -17,6 +17,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
+import { getAuth } from 'firebase/auth';
+import { app } from '@/lib/firebase';
 
 const chartData = [
   { name: '09:00', 'Layanan Konsultasi': 12, 'Pengajuan Perizinan': 20, 'Layanan Prioritas': 5 },
@@ -539,9 +541,17 @@ const ReportTab = () => {
 
 export default function AdminPage() {
   const router = useRouter();
+  const auth = getAuth(app);
+  const { toast } = useToast();
 
-  const handleLogout = () => {
-    router.push('/login');
+  const handleLogout = async () => {
+    try {
+        await auth.signOut();
+        toast({ title: "Logout Berhasil", description: "Anda telah keluar dari sesi." });
+        router.push('/login');
+    } catch (error) {
+        toast({ title: "Error", description: "Gagal melakukan logout.", variant: "destructive" });
+    }
   };
 
   return (

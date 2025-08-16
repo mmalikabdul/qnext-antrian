@@ -22,6 +22,8 @@ import {
 } from 'lucide-react';
 import BkpmLogo from '@/components/icons/bkpm-logo';
 import { useToast } from '@/hooks/use-toast';
+import { getAuth } from 'firebase/auth';
+import { app } from '@/lib/firebase';
 
 
 const serviceIcons: Record<string, React.ReactNode> = {
@@ -44,6 +46,7 @@ export default function StaffPage() {
   const { state, callNextTicket, completeTicket, recallTicket } = useQueue();
   const { tickets, nowServing, services } = state;
   const { toast } = useToast();
+  const auth = getAuth(app);
 
   const currentServingTicket = nowServing && nowServing.counter === COUNTER_NUMBER ? nowServing.ticket : null;
 
@@ -54,8 +57,14 @@ export default function StaffPage() {
     return acc;
   }, {} as Record<string, number>);
 
-  const handleLogout = () => {
-    router.push('/login');
+  const handleLogout = async () => {
+    try {
+        await auth.signOut();
+        toast({ title: "Logout Berhasil", description: "Anda telah keluar dari sesi." });
+        router.push('/login');
+    } catch (error) {
+        toast({ title: "Error", description: "Gagal melakukan logout.", variant: "destructive" });
+    }
   };
 
   const handleCallNext = async (serviceId: string) => {
