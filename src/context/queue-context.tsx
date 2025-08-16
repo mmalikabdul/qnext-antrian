@@ -55,6 +55,13 @@ export interface Counter {
     status: 'open' | 'closed';
 }
 
+export interface User {
+  uid: string;
+  email: string;
+  role: 'admin' | 'staff';
+}
+
+
 // Raw Firestore data types
 interface TicketDoc {
     number: string;
@@ -75,10 +82,13 @@ interface QueueState {
   counters: Counter[];
   services: Service[];
   staff: Staff[];
+  currentUser: User | null;
 }
 
 interface QueueContextType {
   state: QueueState;
+  loginUser: (user: User) => void;
+  logoutUser: () => void;
   addTicket: (service: Service) => Promise<Ticket | null>;
   callNextTicket: (serviceId: string, counter: number) => Promise<void>;
   completeTicket: (ticketId: string) => Promise<void>;
@@ -112,8 +122,18 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
     counters: [],
     services: [],
     staff: [],
+    currentUser: null,
   });
   const { toast } = useToast();
+
+  const loginUser = (user: User) => {
+    setState(prevState => ({ ...prevState, currentUser: user }));
+  };
+
+  const logoutUser = () => {
+    setState(prevState => ({ ...prevState, currentUser: null }));
+  };
+
 
   // Subscribe to Services
   useEffect(() => {
@@ -335,7 +355,7 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
 
 
   return (
-    <QueueContext.Provider value={{ state, addTicket, callNextTicket, completeTicket, recallTicket, addStaff, updateStaff, deleteStaff, addCounter, updateCounter, deleteCounter, addService, updateService, deleteService }}>
+    <QueueContext.Provider value={{ state, loginUser, logoutUser, addTicket, callNextTicket, completeTicket, recallTicket, addStaff, updateStaff, deleteStaff, addCounter, updateCounter, deleteCounter, addService, updateService, deleteService }}>
       {children}
     </QueueContext.Provider>
   );

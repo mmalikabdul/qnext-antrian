@@ -16,15 +16,18 @@ import { Label } from '@/components/ui/label';
 import { LogIn, User, KeyRound } from 'lucide-react';
 import BkpmLogo from '@/components/icons/bkpm-logo';
 import Link from 'next/link';
-import { getAuth, signInWithEmailAndPassword, User as FirebaseUser } from 'firebase/auth';
-import { app } from '@/lib/firebase';
+import { getAuth, signInWithEmailAndPassword } from 'firebase/auth';
+import { app, db } from '@/lib/firebase';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertCircle } from 'lucide-react';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { useQueue } from '@/context/queue-context';
 
 export default function LoginPage() {
   const router = useRouter();
   const { toast } = useToast();
+  const { loginUser } = useQueue();
   const [email, setEmail] = React.useState('');
   const [password, setPassword] = React.useState('');
   const [error, setError] = React.useState<string | null>(null);
@@ -38,12 +41,26 @@ export default function LoginPage() {
 
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      const loggedInEmail = userCredential.user.email;
+      const user = userCredential.user;
       
+      const userDocRef = doc(db, 'users', user.uid);
+      const userDocSnap = await getDoc(userDocRef);
+
       let userRole = 'staff'; // Default role
-      if (loggedInEmail === 'admin@bkpm.go.id') {
-        userRole = 'admin';
+
+      if (userDocSnap.exists()) {
+        userRole = userDocSnap.data().role;
+      } else {
+        // If user document doesn't exist, create one.
+        // For this app, we'll assign 'admin' role based on a specific email.
+        // In a real-world scenario, you might have a different way of assigning initial roles.
+        if (user.email === 'admin@bkpm.go.id') {
+          userRole = 'admin';
+        }
+        await setDoc(userDocRef, { email: user.email, role: userRole });
       }
+
+      loginUser({ uid: user.uid, email: user.email!, role: userRole });
 
       toast({
         title: 'Login Berhasil!',

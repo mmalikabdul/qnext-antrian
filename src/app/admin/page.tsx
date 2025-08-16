@@ -543,10 +543,12 @@ export default function AdminPage() {
   const router = useRouter();
   const auth = getAuth(app);
   const { toast } = useToast();
+  const { logoutUser } = useQueue();
 
   const handleLogout = async () => {
     try {
         await auth.signOut();
+        logoutUser();
         toast({ title: "Logout Berhasil", description: "Anda telah keluar dari sesi." });
         router.push('/login');
     } catch (error) {

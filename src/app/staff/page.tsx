@@ -43,7 +43,7 @@ const COUNTER_NUMBER = 1; // Static counter number for this demo staff member
 
 export default function StaffPage() {
   const router = useRouter();
-  const { state, callNextTicket, completeTicket, recallTicket } = useQueue();
+  const { state, callNextTicket, completeTicket, recallTicket, logoutUser } = useQueue();
   const { tickets, nowServing, services } = state;
   const { toast } = useToast();
   const auth = getAuth(app);
@@ -60,6 +60,7 @@ export default function StaffPage() {
   const handleLogout = async () => {
     try {
         await auth.signOut();
+        logoutUser();
         toast({ title: "Logout Berhasil", description: "Anda telah keluar dari sesi." });
         router.push('/login');
     } catch (error) {
