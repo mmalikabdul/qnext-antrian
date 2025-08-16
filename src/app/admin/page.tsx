@@ -164,7 +164,7 @@ const StaffForm = ({ staff, onSave, closeDialog }: { staff?: (Staff & User) | nu
             <div className="space-y-2">
                 <Label>Loket yang Dilayani</Label>
                 <div className="grid grid-cols-3 gap-2">
-                    {counters.filter(c => c.status === 'open').map(counter => (
+                    {counters && counters.filter(c => c.status === 'open').map(counter => (
                         <div key={counter.id} className="flex items-center gap-2">
                             <input
                                 type="checkbox"
@@ -533,7 +533,7 @@ const ServiceForm = ({ service, onSave, closeDialog }: { service?: Service | nul
             <div className="space-y-2">
                 <Label>Dapat Dilayani di Loket</Label>
                 <div className="grid grid-cols-3 gap-2">
-                    {counters.map(counter => (
+                    {counters && counters.map(counter => (
                         <div key={counter.id} className="flex items-center gap-2">
                             <input
                                 type="checkbox"
