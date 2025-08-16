@@ -136,10 +136,7 @@ const StaffForm = ({ staff, onSave, closeDialog }: { staff?: (Staff & User) | nu
         await onSave(staffData);
 
         setIsLoading(false);
-        // Only close dialog if not loading (i.e., operation finished)
-        if (!isLoading) {
-            closeDialog();
-        }
+        closeDialog();
     };
     
     return (
@@ -192,11 +189,12 @@ const StaffForm = ({ staff, onSave, closeDialog }: { staff?: (Staff & User) | nu
 
 
 const StaffTab = () => {
-    const { state: { staff, counters, users, currentUser }, addStaff, updateStaff, deleteStaff } = useQueue();
+    const { state: { staff, counters, users, currentUser }, addStaff, updateStaff, deleteStaff, logoutUser } = useQueue();
     const [isAddOpen, setIsAddOpen] = React.useState(false);
     const [editingStaff, setEditingStaff] = React.useState<(Staff & User) | null>(null);
     const { toast } = useToast();
     const router = useRouter();
+    const auth = getAuth(app);
     
     const combinedStaffData = staff.map(s => {
         const userData = users.find(u => u.uid === s.id);
@@ -211,20 +209,28 @@ const StaffTab = () => {
                 toast({ title: "Sukses", description: "Data petugas berhasil diperbarui." });
                 setEditingStaff(null);
             } else { // Adding
-                const originalAdmin = currentUser;
-                if (!originalAdmin) throw new Error("Admin user not found.");
-
-                await addStaff({ ...data });
+                if (!currentUser) throw new Error("Admin user not found.");
                 
-                toast({ title: "Sukses", description: "Petugas baru berhasil ditambahkan." });
+                // We pass the current admin user to the addStaff function
+                await addStaff(data, currentUser);
+                
+                toast({ 
+                    title: "Sukses", 
+                    description: "Petugas baru berhasil ditambahkan. Anda akan logout. Silakan login kembali." 
+                });
                 setIsAddOpen(false);
-                 // No need to re-login as the context handles auth state changes
+
+                // Due to Firebase SDK limitations, admin will be logged out. 
+                // We manually sign them out from the app state and redirect to login.
+                await auth.signOut();
+                logoutUser();
+                router.push('/login');
             }
         } catch(e: any) {
             console.error("Failed to save staff:", e);
             const message = e.code === 'auth/email-already-in-use' 
                 ? "Email sudah digunakan oleh akun lain."
-                : "Gagal menyimpan data petugas.";
+                : `Gagal menyimpan data petugas: ${e.message}`;
             toast({ title: "Error", description: message, variant: "destructive" });
         }
     }
@@ -531,7 +537,7 @@ const ServiceTab = () => {
     const handleDeleteService = async (id: string) => {
         try {
             await deleteService(id);
-            toast({ title: "Sukses", description: "Layanan berhasil dihapus." });
+            // Toast is handled inside context now
         } catch(e) {
              toast({ title: "Error", description: "Gagal menghapus layanan.", variant: "destructive" });
         }
@@ -592,7 +598,7 @@ const ServiceTab = () => {
                                         <AlertDialogContent>
                                             <AlertDialogHeader>
                                                 <AlertDialogTitle>Anda yakin?</AlertDialogTitle>
-                                                <AlertDialogDescription>Tindakan ini tidak dapat dibatalkan. Ini akan menghapus layanan secara permanen.</AlertDialogDescription>
+                                                <AlertDialogDescription>Tindakan ini tidak dapat dibatalkan. Ini akan menghapus layanan dan data counter hariannya secara permanen.</AlertDialogDescription>
                                             </AlertDialogHeader>
                                             <AlertDialogFooter>
                                                 <AlertDialogCancel>Batal</AlertDialogCancel>
@@ -700,5 +706,3 @@ export default function AdminPage() {
     </div>
   );
 }
-
-    
