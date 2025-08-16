@@ -145,9 +145,12 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
       const services: Service[] = [];
       querySnapshot.forEach((doc) => {
-        services.push({ id: doc.id, ...doc.data() } as Service);
+        const data = doc.data();
+        services.push({ id: doc.id, name: data.name } as Service);
       });
       setState(prevState => ({...prevState, services}));
+    }, (error) => {
+      console.error("Error fetching services:", error);
     });
     return () => unsubscribe();
   }, []);
@@ -159,9 +162,11 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
       const counters: Counter[] = [];
       querySnapshot.forEach((doc) => {
         const data = doc.data();
-        counters.push({ docId: doc.id, ...data } as Counter);
+        counters.push({ docId: doc.id, id: data.id, name: data.name, status: data.status });
       });
       setState(prevState => ({...prevState, counters}));
+    }, (error) => {
+      console.error("Error fetching counters:", error);
     });
     return () => unsubscribe();
   }, []);
@@ -175,6 +180,8 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
         staff.push({ id: doc.id, ...doc.data() } as Staff);
       });
       setState(prevState => ({...prevState, staff}));
+    }, (error) => {
+      console.error("Error fetching staff:", error);
     });
     return () => unsubscribe();
   }, []);
@@ -198,6 +205,8 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
         } as Ticket);
       });
       setState(prevState => ({...prevState, tickets: enrichTickets(tickets, prevState.services)}));
+    }, (error) => {
+      console.error("Error fetching tickets:", error);
     });
     return () => unsubscribe();
   }, [state.services]);
@@ -230,6 +239,8 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
          // Ticket is not in today's list, maybe it's from yesterday, clear nowServing
          setState(prevState => ({ ...prevState, nowServing: null }));
       }
+    }, (error) => {
+      console.error("Error fetching nowServing:", error);
     });
     return () => unsubscribe();
   }, [state.tickets]);
@@ -250,14 +261,23 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
             status: 'waiting',
         });
         
-        return {
+        // This is a client-side representation, so timestamp can be new Date()
+        const newTicketData = {
             id: docRef.id,
             number: newTicketNumber,
-            service,
             serviceId: service.id,
+            service: service,
             timestamp: new Date(),
-            status: 'waiting',
+            status: 'waiting' as const,
         };
+
+        setState(prevState => ({
+            ...prevState,
+            tickets: enrichTickets([...prevState.tickets, newTicketData], prevState.services)
+        }));
+        
+        return newTicketData;
+
     } catch (error) {
         console.error("Error adding ticket: ", error);
         toast({ title: 'Error', description: 'Gagal menambahkan tiket.', variant: 'destructive'});
@@ -334,24 +354,23 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
 
   const addCounter = async (counter: Omit<Counter, 'id' | 'docId'>) => {
       const q = query(collection(db, 'counters'), orderBy('id', 'desc'), limit(1));
-      const lastCounter = await getDocs(q);
-      const newId = lastCounter.empty ? 1 : lastCounter.docs[0].data().id + 1;
+      const lastCounterSnapshot = await getDocs(q);
+      const newId = lastCounterSnapshot.empty ? 1 : lastCounterSnapshot.docs[0].data().id + 1;
       await addDoc(collection(db, 'counters'), {...counter, id: newId });
   }
   const updateCounter = async (counter: Counter) => {
       const { docId, ...data } = counter;
-      await updateDoc(doc(db, 'counters', docId), data);
+      await updateDoc(doc(db, 'counters', docId), data as any);
   }
   const deleteCounter = async (counterDocId: string) => {
       await deleteDoc(doc(db, 'counters', counterDocId));
   }
   
-  const addService = async (service: Omit<Service, 'icon'>) => {
-      await addDoc(collection(db, 'services'), service);
+  const addService = async (service: Omit<Service, 'icon' | 'name'> & {id: string, name: string}) => {
+      await updateDoc(doc(db, 'services', service.id), { name: service.name });
   }
   const updateService = async (service: Omit<Service, 'icon'>) => {
-      const { id, ...data } = service;
-      await updateDoc(doc(db, 'services', id), data);
+      await updateDoc(doc(db, 'services', service.id), { name: service.name });
   }
   const deleteService = async (serviceId: string) => {
       await deleteDoc(doc(db, 'services', serviceId));

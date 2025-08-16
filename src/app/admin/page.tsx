@@ -19,6 +19,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/hooks/use-toast';
 import { getAuth } from 'firebase/auth';
 import { app } from '@/lib/firebase';
+import { doc, setDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 
 const chartData = [
   { name: '09:00', 'Layanan Konsultasi': 12, 'Pengajuan Perizinan': 20, 'Layanan Prioritas': 5 },
@@ -355,6 +357,7 @@ const CounterTab = () => {
                  <Table>
                     <TableHeader>
                         <TableRow>
+                            <TableHead>ID Loket</TableHead>
                             <TableHead>Nama Loket</TableHead>
                             <TableHead>Status</TableHead>
                             <TableHead className="text-right">Aksi</TableHead>
@@ -363,7 +366,8 @@ const CounterTab = () => {
                     <TableBody>
                         {counters.map(c => (
                             <TableRow key={c.docId}>
-                                <TableCell className="font-medium">{c.name}</TableCell>
+                                <TableCell className="font-medium">{c.id}</TableCell>
+                                <TableCell>{c.name}</TableCell>
                                 <TableCell>{c.status === 'open' ? 'Buka' : 'Tutup'}</TableCell>
                                 <TableCell className="text-right">
                                     <Dialog open={editingCounter?.docId === c.docId} onOpenChange={(isOpen) => !isOpen && setEditingCounter(null)}>
@@ -400,7 +404,7 @@ const CounterTab = () => {
     );
 }
 
-const ServiceForm = ({ service, onSave, closeDialog }: { service?: Service | null, onSave: (data: Service | Omit<Service, 'id' | 'icon'> & {id: string}) => void, closeDialog: () => void }) => {
+const ServiceForm = ({ service, onSave, closeDialog }: { service?: Service | null, onSave: (data: Omit<Service, 'icon'>) => void, closeDialog: () => void }) => {
     const [id, setId] = React.useState(service?.id || '');
     const [name, setName] = React.useState(service?.name || '');
 
@@ -413,9 +417,9 @@ const ServiceForm = ({ service, onSave, closeDialog }: { service?: Service | nul
     return (
         <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-                <Label htmlFor="service-id">ID Layanan</Label>
+                <Label htmlFor="service-id">ID Layanan (1 Huruf)</Label>
                 <Input id="service-id" value={id} onChange={(e) => setId(e.target.value.toUpperCase())} required disabled={!!service} maxLength={1} />
-                 { !service && <p className="text-xs text-muted-foreground">ID Layanan adalah satu huruf unik (misal: D).</p> }
+                 { !service && <p className="text-xs text-muted-foreground">ID Layanan adalah satu huruf unik (misal: A, B, C).</p> }
             </div>
             <div className="space-y-2">
                 <Label htmlFor="service-name">Nama Layanan</Label>
@@ -435,18 +439,19 @@ const ServiceTab = () => {
     const [editingService, setEditingService] = React.useState<Service | null>(null);
     const { toast } = useToast();
 
-    const handleSaveService = async (data: Service | Omit<Service, 'id' | 'icon'> & {id: string}) => {
+    const handleSaveService = async (data: Omit<Service, 'icon'>) => {
         try {
-            const serviceData = { id: data.id, name: data.name };
-            if (editingService) {
-                await updateService(serviceData);
+            if (editingService) { // We are editing
+                await updateService(data);
                 toast({ title: "Sukses", description: "Layanan berhasil diperbarui." });
-            } else {
-                await addService(serviceData);
+            } else { // We are adding
+                const serviceRef = doc(db, 'services', data.id);
+                await setDoc(serviceRef, { name: data.name });
                 toast({ title: "Sukses", description: "Layanan baru berhasil ditambahkan." });
             }
         } catch(e) {
-            toast({ title: "Error", description: "Gagal menyimpan layanan.", variant: "destructive" });
+            console.error(e);
+            toast({ title: "Error", description: "Gagal menyimpan layanan. Pastikan ID unik.", variant: "destructive" });
         }
     }
 
@@ -466,13 +471,19 @@ const ServiceTab = () => {
                     <CardTitle>Manajemen Layanan</CardTitle>
                     <CardDescription>Atur layanan yang dapat dipilih oleh pelanggan.</CardDescription>
                 </div>
-                <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+                <Dialog open={isAddOpen} onOpenChange={(isOpen) => {
+                    if (!isOpen) setEditingService(null);
+                    setIsAddOpen(isOpen);
+                }}>
                     <DialogTrigger asChild>
-                        <Button onClick={() => setEditingService(null)}><PlusCircle className="mr-2"/> Tambah Layanan</Button>
+                        <Button onClick={() => {
+                            setEditingService(null);
+                            setIsAddOpen(true);
+                        }}><PlusCircle className="mr-2"/> Tambah Layanan</Button>
                     </DialogTrigger>
                     <DialogContent>
-                        <DialogHeader><DialogTitle>Tambah Layanan Baru</DialogTitle></DialogHeader>
-                        <ServiceForm onSave={handleSaveService} closeDialog={() => setIsAddOpen(false)} />
+                        <DialogHeader><DialogTitle>{editingService ? 'Edit Layanan' : 'Tambah Layanan Baru'}</DialogTitle></DialogHeader>
+                        <ServiceForm service={editingService} onSave={handleSaveService} closeDialog={() => setIsAddOpen(false)} />
                     </DialogContent>
                 </Dialog>
             </CardHeader>
@@ -491,15 +502,10 @@ const ServiceTab = () => {
                                 <TableCell className="font-medium">{s.id}</TableCell>
                                 <TableCell>{s.name}</TableCell>
                                 <TableCell className="text-right">
-                                    <Dialog open={editingService?.id === s.id} onOpenChange={(isOpen) => !isOpen && setEditingService(null)}>
-                                        <DialogTrigger asChild>
-                                            <Button variant="ghost" size="icon" onClick={() => setEditingService(s)}><Edit className="h-4 w-4"/></Button>
-                                        </DialogTrigger>
-                                        <DialogContent>
-                                            <DialogHeader><DialogTitle>Edit Layanan</DialogTitle></DialogHeader>
-                                            <ServiceForm service={s} onSave={handleSaveService} closeDialog={() => setEditingService(null)} />
-                                        </DialogContent>
-                                    </Dialog>
+                                    <Button variant="ghost" size="icon" onClick={() => {
+                                        setEditingService(s);
+                                        setIsAddOpen(true);
+                                    }}><Edit className="h-4 w-4"/></Button>
                                     <AlertDialog>
                                         <AlertDialogTrigger asChild>
                                             <Button variant="ghost" size="icon" className="text-destructive"><Trash2 className="h-4 w-4"/></Button>
@@ -543,7 +549,13 @@ export default function AdminPage() {
   const router = useRouter();
   const auth = getAuth(app);
   const { toast } = useToast();
-  const { logoutUser } = useQueue();
+  const { logoutUser, state } = useQueue();
+
+  React.useEffect(() => {
+    if(!state.currentUser) {
+        // router.push('/login');
+    }
+  }, [state.currentUser, router]);
 
   const handleLogout = async () => {
     try {
