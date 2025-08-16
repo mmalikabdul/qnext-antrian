@@ -3,7 +3,7 @@
 import type { ReactNode } from 'react';
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { db, app } from '@/lib/firebase';
-import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword } from 'firebase/auth';
+import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithCredential, EmailAuthProvider } from 'firebase/auth';
 import { 
     collection, 
     onSnapshot, 
@@ -146,6 +146,12 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
         if (user) {
+            // Check if this user object is already the current user to avoid redundant fetches
+            if (state.currentUser && user.uid === state.currentUser.uid) {
+                setState(prevState => ({...prevState, authLoaded: true}));
+                return;
+            }
+            
             const userDocRef = doc(db, 'users', user.uid);
             const userDocSnap = await getDoc(userDocRef);
             if (userDocSnap.exists()) {
@@ -155,13 +161,17 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
                 const staffData = staffDocSnap.exists() ? staffDocSnap.data() as Omit<Staff, 'id'> : { name: userData.email, counters: [] };
                 
                 setState(prevState => ({ ...prevState, currentUser: { uid: user.uid, ...userData, ...staffData }, authLoaded: true }));
+            } else {
+                 // This case might happen if user is created but firestore doc fails.
+                 // Treat as logged out.
+                 setState(prevState => ({ ...prevState, currentUser: null, authLoaded: true }));
             }
         } else {
             setState(prevState => ({ ...prevState, currentUser: null, authLoaded: true }));
         }
     });
     return () => unsubscribe();
-  }, [auth]);
+  }, [auth, state.currentUser]);
 
 
   const loginUser = (user: User) => {
@@ -401,21 +411,28 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
   const addStaff = async (staffData: any) => {
     const { email, password, name, counters } = staffData;
     const auth = getAuth(app);
-    // Create user in Firebase Auth
-    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-    const user = userCredential.user;
-
-    const batch = writeBatch(db);
-
-    // Create user document in 'users' collection
-    const userDocRef = doc(db, 'users', user.uid);
-    batch.set(userDocRef, { email, role: 'staff' });
     
-    // Create staff document in 'staff' collection
-    const staffDocRef = doc(db, 'staff', user.uid);
-    batch.set(staffDocRef, { name, counters });
+    // Store current admin's credential
+    const adminUser = auth.currentUser;
+    if (!adminUser || !adminUser.email) {
+      throw new Error("Admin user not found or logged out.");
+    }
+    const adminCredential = EmailAuthProvider.credential(adminUser.email, window.prompt(`Untuk keamanan, masukkan kembali password admin (${adminUser.email}):`) || '');
 
+    // Create new staff user (this will sign in the new user)
+    const newUserCredential = await createUserWithEmailAndPassword(auth, email, password);
+    const newUser = newUserCredential.user;
+
+    // Create Firestore documents for the new staff
+    const batch = writeBatch(db);
+    const userDocRef = doc(db, 'users', newUser.uid);
+    batch.set(userDocRef, { email, role: 'staff' });
+    const staffDocRef = doc(db, 'staff', newUser.uid);
+    batch.set(staffDocRef, { name, counters });
     await batch.commit();
+
+    // Re-login as admin
+    await signInWithCredential(auth, adminCredential);
   }
   const updateStaff = async (staff: Staff) => {
       const { id, ...data } = staff;

@@ -19,9 +19,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/hooks/use-toast';
 import { getAuth } from 'firebase/auth';
 import { app } from '@/lib/firebase';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { doc, setDoc } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
 
 const chartData = [
   { name: '09:00', 'Layanan Konsultasi': 12, 'Pengajuan Perizinan': 20, 'Layanan Prioritas': 5 },
@@ -118,9 +115,11 @@ const StaffForm = ({ staff, onSave, closeDialog }: { staff?: (Staff & User) | nu
     const [email, setEmail] = React.useState(staff?.email || '');
     const [password, setPassword] = React.useState('');
     const [assignedCounters, setAssignedCounters] = React.useState<number[]>(staff?.counters || []);
+    const [isLoading, setIsLoading] = React.useState(false);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        setIsLoading(true);
         const staffData: any = { name, counters: assignedCounters };
         if (staff?.uid) { // Editing existing staff
             staffData.uid = staff.uid;
@@ -128,12 +127,14 @@ const StaffForm = ({ staff, onSave, closeDialog }: { staff?: (Staff & User) | nu
         } else { // Adding new staff
             if (!email || !password) {
                 alert("Email dan password harus diisi untuk petugas baru.");
+                setIsLoading(false);
                 return;
             }
             staffData.email = email;
             staffData.password = password;
             await onSave(staffData);
         }
+        setIsLoading(false);
         closeDialog();
     };
     
@@ -178,7 +179,7 @@ const StaffForm = ({ staff, onSave, closeDialog }: { staff?: (Staff & User) | nu
                 </div>
             </div>
             <DialogFooter>
-                <Button type="submit">Simpan</Button>
+                <Button type="submit" disabled={isLoading}>{isLoading ? "Menyimpan..." : "Simpan"}</Button>
             </DialogFooter>
         </form>
     );
@@ -190,7 +191,6 @@ const StaffTab = () => {
     const [isAddOpen, setIsAddOpen] = React.useState(false);
     const [editingStaff, setEditingStaff] = React.useState<(Staff & User) | null>(null);
     const { toast } = useToast();
-    const auth = getAuth(app);
     
     const combinedStaffData = staff.map(s => {
         const userData = users.find(u => u.uid === s.id);
@@ -204,7 +204,7 @@ const StaffTab = () => {
                 await updateStaff(staffData);
                 toast({ title: "Sukses", description: "Data petugas berhasil diperbarui." });
             } else { // Adding
-                await addStaff(data); // `addStaff` will handle auth creation and firestore doc
+                await addStaff(data); // `addStaff` will handle auth creation, firestore doc and re-login admin
                 toast({ title: "Sukses", description: "Petugas baru berhasil ditambahkan dan didaftarkan." });
             }
         } catch(e: any) {
@@ -508,6 +508,7 @@ const ServiceTab = () => {
                 toast({ title: "Sukses", description: "Layanan baru berhasil ditambahkan." });
             }
             setEditingService(null);
+            setIsAddOpen(false); // Close dialog on success
         } catch(e) {
             console.error(e);
             toast({ title: "Error", description: "Gagal menyimpan layanan. Pastikan ID unik.", variant: "destructive" });
@@ -686,3 +687,5 @@ export default function AdminPage() {
     </div>
   );
 }
+
+    
