@@ -76,32 +76,56 @@ export default function MonitorPage() {
 
 
   useEffect(() => {
-    setCurrentDate(new Date().toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long',  year: 'numeric' }));
-    
-    if (audioRef.current) {
-        audioRef.current.onended = () => {
-            if (nowServing && nowServing.ticket.number !== lastCalledRef.current) {
-                const textToSpeak = `Nomor antrian, ${nowServing.ticket.number.split('').join(' ')}, silahkan menuju, ke loket, ${nowServing.counter}`;
-                speak(textToSpeak);
-                lastCalledRef.current = nowServing.ticket.number;
-            }
-        };
-    }
-  }, [nowServing, speak]);
+    const timer = setInterval(() => {
+      setCurrentDate(new Date().toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long',  year: 'numeric' }));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+  
 
   useEffect(() => {
-    if (nowServing && nowServing.ticket.number !== lastCalledRef.current) {
-        audioRef.current?.play().catch(e => console.error("Audio play failed", e));
-    }
+    // This effect handles the logic for playing sounds and speaking.
     
-    // Reset recall flash
+    const audio = audioRef.current;
+    if (!audio || !nowServing) return;
+    
+    const ticketNumber = nowServing.ticket.number;
+    const counterNumber = nowServing.counter;
+
+    const handleAudioEnd = () => {
+      const textToSpeak = `Nomor antrian, ${ticketNumber.split('').join(' ')}, silahkan menuju, ke loket, ${counterNumber}`;
+      speak(textToSpeak);
+      lastCalledRef.current = ticketNumber;
+      audio.removeEventListener('ended', handleAudioEnd);
+    };
+    
     const recallTicketId = state.recallInfo?.ticketId;
-    if (recallTicketId && recallTicketId === nowServing?.ticket.id) {
+    if (recallTicketId && recallTicketId === nowServing.ticket.id) {
+        // Handle recall visual cue
         setIsRecalling(true);
         const timer = setTimeout(() => setIsRecalling(false), 2000); // Flash for 2 seconds
+        
+        // On recall, only speak, don't play chime.
+        const textToSpeak = `Panggilan ulang untuk, nomor antrian, ${ticketNumber.split('').join(' ')}, silahkan menuju, ke loket, ${counterNumber}`;
+        speak(textToSpeak);
+        
         return () => clearTimeout(timer);
     }
-  }, [nowServing, state.recallInfo]);
+    
+    if (ticketNumber !== lastCalledRef.current) {
+        // This is a new ticket call
+        audio.addEventListener('ended', handleAudioEnd);
+        audio.play().catch(e => {
+            console.error("Audio play failed, likely due to browser autoplay policy.", e);
+            // Fallback to just speaking if audio fails to play
+            handleAudioEnd();
+        });
+    }
+    
+    return () => {
+        audio.removeEventListener('ended', handleAudioEnd);
+    }
+  }, [nowServing, speak, state.recallInfo]);
 
 
   const waitingTickets = tickets.filter(t => t.status === 'waiting');
@@ -109,17 +133,29 @@ export default function MonitorPage() {
 
   const getFullVideoUrl = () => {
     if (!videoUrl) return '';
-    const params = 'autoplay=1&mute=1&loop=1&controls=0&playlist=' + (videoUrl.split('list=')[1] || '');
-    if (videoUrl.includes('?')) {
-      return `${videoUrl}&${params}`;
+    try {
+        const url = new URL(videoUrl);
+        const listId = url.searchParams.get('list');
+        if (!listId) {
+             // Fallback for single video embed
+            const videoId = url.pathname.split('/').pop();
+            return `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&loop=1&controls=0&playlist=${videoId}`;
+        }
+        
+        let embedUrl = `https://www.youtube.com/embed/videoseries?list=${listId}`;
+        embedUrl += '&autoplay=1&mute=1&loop=1&controls=0';
+        return embedUrl;
+
+    } catch (e) {
+        console.error("Invalid YouTube URL:", e);
+        return ""; // Return empty string if URL is invalid
     }
-    return `${videoUrl}?${params}`;
   }
 
 
   return (
     <div className="flex flex-col h-screen bg-primary text-primary-foreground overflow-hidden font-sans">
-       <audio ref={audioRef} src="https://firebasestorage.googleapis.com/v0/b/studio-9a239.appspot.com/o/chime.mp3?alt=media&token=1d746564-7437-488b-a78b-3c3358f4cf8a" preload="auto"></audio>
+       <audio ref={audioRef} src="https://firebasestorage.googleapis.com/v0/b/bkpm-q.appspot.com/o/chime.mp3?alt=media&token=80b953a3-a75d-45cb-a035-518335919445" preload="auto"></audio>
       <header className="px-8 py-3 flex justify-between items-center bg-black/20 shadow-lg">
         <Link href="/" className="flex items-center gap-4">
           <BkpmLogo className="h-12 w-12" />
@@ -135,20 +171,20 @@ export default function MonitorPage() {
       </header>
 
       <main className="flex-1 grid grid-cols-12 grid-rows-6 gap-6 p-6">
-        {videoUrl ? (
-            <iframe
-                className="col-span-8 row-span-4 rounded-lg overflow-hidden shadow-2xl w-full h-full"
-                src={getFullVideoUrl()}
-                title="YouTube video player"
-                frameBorder="0"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                allowFullScreen>
-            </iframe>
-        ) : (
-            <div className="col-span-8 row-span-4 rounded-lg overflow-hidden shadow-2xl bg-black flex items-center justify-center">
+         <div className="col-span-8 row-span-4 rounded-lg overflow-hidden shadow-2xl bg-black flex items-center justify-center">
+            {videoUrl ? (
+                <iframe
+                    className="w-full h-full"
+                    src={getFullVideoUrl()}
+                    title="YouTube video player"
+                    frameBorder="0"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                    allowFullScreen>
+                </iframe>
+            ) : (
                 <p className="text-primary-foreground">Video tidak tersedia.</p>
-            </div>
-        )}
+            )}
+        </div>
 
         <Card className={`col-span-4 row-span-6 bg-background text-foreground flex flex-col shadow-2xl transition-all duration-300 ${isRecalling ? 'ring-4 ring-accent' : ''}`}>
           <CardHeader className="text-center bg-primary text-primary-foreground py-4">
