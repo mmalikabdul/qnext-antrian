@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useRef, useCallback, useState } from 'react';
 import { useQueue } from '@/context/queue-context';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import BkpmLogo from '@/components/icons/bkpm-logo';
@@ -70,6 +70,11 @@ export default function MonitorPage() {
   const { nowServing, tickets, videoUrl } = state;
   const { speak } = useSpeech();
   const lastSpokenRef = useRef<string | null>(null);
+  const [currentDate, setCurrentDate] = useState('');
+
+  useEffect(() => {
+    setCurrentDate(new Date().toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long',  year: 'numeric' }));
+  }, []);
 
   useEffect(() => {
     if (nowServing && nowServing.ticket.number !== lastSpokenRef.current) {
@@ -111,7 +116,7 @@ export default function MonitorPage() {
           </div>
         </Link>
         <div className="text-right">
-            <p className="text-3xl font-semibold">{new Date().toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long',  year: 'numeric' })}</p>
+            <p className="text-3xl font-semibold">{currentDate || 'Memuat tanggal...'}</p>
             {/* <p className="text-5xl font-bold">10:30:45</p> */}
         </div>
       </header>
