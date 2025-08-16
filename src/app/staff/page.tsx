@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import { useQueue } from '@/context/queue-context';
+import * as LucideIcons from 'lucide-react';
 import {
   Card,
   CardContent,
@@ -12,33 +13,22 @@ import {
 } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
-  Users,
-  Briefcase,
   LogOut,
   PhoneCall,
   CheckCircle,
   Clock,
-  Ticket as TicketIcon,
   Building,
   SkipForward,
 } from 'lucide-react';
-import BkpmLogo from '@/components/icons/bkpm-logo';
+import QNextLogo from '@/components/icons/q-next-logo';
 import { useToast } from '@/hooks/use-toast';
 import { getAuth } from 'firebase/auth';
 import { app } from '@/lib/firebase';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
-
-const serviceIcons: Record<string, React.ReactNode> = {
-    A: <Users className="h-6 w-6 text-primary" />,
-    B: <Briefcase className="h-6 w-6 text-primary" />,
-    C: <TicketIcon className="h-6 w-6 text-primary" />,
-    DEFAULT: <TicketIcon className="h-6 w-6 text-primary" />,
-};
-
-const getServiceIcon = (serviceId: string) => {
-    const firstChar = serviceId.charAt(0).toUpperCase();
-    return serviceIcons[firstChar] || serviceIcons.DEFAULT;
+const getIcon = (iconName: string): React.ComponentType<LucideIcons.LucideProps> => {
+    // @ts-ignore
+    return LucideIcons[iconName] || LucideIcons['Ticket'];
 }
 
 
@@ -123,7 +113,7 @@ export default function StaffPage() {
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-20">
             <div className="flex items-center space-x-4">
-              <BkpmLogo className="h-10 w-10 text-primary" />
+              <QNextLogo className="h-10 w-10 text-primary" />
               <div className="flex flex-col">
                 <h1 className="text-2xl font-bold text-primary tracking-tight">Panel Petugas</h1>
                 <p className="text-sm text-muted-foreground">{currentUser.name || currentUser.email}</p>
@@ -165,14 +155,16 @@ export default function StaffPage() {
               <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {activeCounterId ? (
                     servicesForActiveCounter.length > 0 ? (
-                        servicesForActiveCounter.map((service) => (
+                        servicesForActiveCounter.map((service) => {
+                          const Icon = getIcon(service.icon);
+                          return (
                           <Card key={service.id} className="p-4 flex flex-col justify-between">
                             <div className="flex items-start justify-between">
                                 <div>
                                     <h3 className="font-semibold text-lg">{service.name}</h3>
                                     <p className="text-sm text-muted-foreground">Antrian: {waitingCountByService[service.id] || 0}</p>
                                 </div>
-                                {getServiceIcon(service.id)}
+                                <Icon className="h-6 w-6 text-primary" />
                             </div>
                             <Button
                               onClick={() => handleCallNext(service.id)}
@@ -183,7 +175,8 @@ export default function StaffPage() {
                               Panggil Berikutnya
                             </Button>
                           </Card>
-                        ))
+                          )
+                        })
                     ) : (
                         <p className="col-span-full text-muted-foreground">Tidak ada layanan yang diatur untuk loket ini.</p>
                     )

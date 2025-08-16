@@ -5,8 +5,10 @@ import { useRouter } from 'next/navigation';
 import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Users, Briefcase, Ticket, Clock, LogOut, BarChart2, Settings, UserCog, Building, FileText, PlusCircle, Edit, Trash2, Film, ChevronLeft, ChevronRight, Menu } from 'lucide-react';
-import BkpmLogo from '@/components/icons/bkpm-logo';
+import * as LucideIcons from 'lucide-react';
+import { Users, Briefcase, Ticket, Clock, LogOut, BarChart2, Settings, UserCog, Building, FileText, PlusCircle, Edit, Trash2, Film, ChevronLeft, ChevronRight, Menu, Icon as IconType } from 'lucide-react';
+
+import QNextLogo from '@/components/icons/q-next-logo';
 import { useQueue } from '@/context/queue-context';
 import type { Staff, Counter, Service, User } from '@/context/queue-context';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -19,6 +21,8 @@ import { useToast } from '@/hooks/use-toast';
 import { getAuth } from 'firebase/auth';
 import { app } from '@/lib/firebase';
 import { cn } from '@/lib/utils';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 const chartData = [
   { name: '09:00', 'Layanan Konsultasi': 12, 'Pengajuan Perizinan': 20, 'Layanan Prioritas': 5 },
@@ -457,15 +461,25 @@ const CounterTab = () => {
     );
 }
 
-const ServiceForm = ({ service, onSave, closeDialog }: { service?: Service | null, onSave: (data: Omit<Service, 'icon'>) => void, closeDialog: () => void }) => {
+const getIcon = (iconName: string): React.ComponentType<LucideIcons.LucideProps> => {
+    // @ts-ignore
+    return LucideIcons[iconName] || LucideIcons['Ticket'];
+}
+
+const ServiceForm = ({ service, onSave, closeDialog }: { service?: Service | null, onSave: (data: Service) => void, closeDialog: () => void }) => {
     const { state: { counters } } = useQueue();
     const [id, setId] = React.useState(service?.id || '');
     const [name, setName] = React.useState(service?.name || '');
     const [assignedCounters, setAssignedCounters] = React.useState<number[]>(service?.servingCounters || []);
+    const [icon, setIcon] = React.useState(service?.icon || 'Ticket');
+    const [isIconPickerOpen, setIconPickerOpen] = React.useState(false);
+    
+    const iconList = Object.keys(LucideIcons).filter(key => typeof LucideIcons[key as keyof typeof LucideIcons] === 'object');
+    const SelectedIcon = getIcon(icon);
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        onSave({ id, name, servingCounters: assignedCounters });
+        onSave({ id, name, servingCounters: assignedCounters, icon });
         closeDialog();
     };
 
@@ -480,6 +494,42 @@ const ServiceForm = ({ service, onSave, closeDialog }: { service?: Service | nul
                 <Label htmlFor="service-name">Nama Layanan</Label>
                 <Input id="service-name" value={name} onChange={(e) => setName(e.target.value)} required />
             </div>
+
+            <div className="space-y-2">
+                <Label>Ikon</Label>
+                <div className="flex items-center gap-2">
+                    <SelectedIcon className="h-8 w-8 p-1.5 border rounded-md" />
+                     <Popover open={isIconPickerOpen} onOpenChange={setIconPickerOpen}>
+                        <PopoverTrigger asChild>
+                             <Button type="button" variant="outline">Pilih Ikon</Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-80">
+                             <ScrollArea className="h-72">
+                                <div className="grid grid-cols-6 gap-2">
+                                {iconList.map(iconName => {
+                                    const IconComponent = getIcon(iconName);
+                                    return (
+                                        <Button
+                                            key={iconName}
+                                            variant="ghost"
+                                            size="icon"
+                                            className={cn("h-10 w-10", icon === iconName && "bg-accent text-accent-foreground")}
+                                            onClick={() => {
+                                                setIcon(iconName);
+                                                setIconPickerOpen(false);
+                                            }}
+                                        >
+                                            <IconComponent className="h-5 w-5" />
+                                        </Button>
+                                    )
+                                })}
+                                </div>
+                            </ScrollArea>
+                        </PopoverContent>
+                    </Popover>
+                </div>
+            </div>
+
             <div className="space-y-2">
                 <Label>Dapat Dilayani di Loket</Label>
                 <div className="grid grid-cols-3 gap-2">
@@ -516,13 +566,13 @@ const ServiceTab = () => {
     const [editingService, setEditingService] = React.useState<Service | null>(null);
     const { toast } = useToast();
 
-    const handleSaveService = async (data: Omit<Service, 'icon'>) => {
+    const handleSaveService = async (data: Service) => {
         try {
              if (editingService) {
                 await updateService(data);
                 toast({ title: "Sukses", description: "Layanan berhasil diperbarui." });
             } else {
-                await addService(data as Omit<Service, 'icon'> & { id: string });
+                await addService(data);
                 toast({ title: "Sukses", description: "Layanan baru berhasil ditambahkan." });
             }
             setEditingService(null);
@@ -565,7 +615,7 @@ const ServiceTab = () => {
                     </DialogTrigger>
                     <DialogContent>
                         <DialogHeader><DialogTitle>{editingService ? 'Edit Layanan' : 'Tambah Layanan Baru'}</DialogTitle></DialogHeader>
-                        <ServiceForm service={editingService} onSave={handleSaveService} closeDialog={() => { setIsAddOpen(false); setEditingService(null); }} />
+                        <ServiceForm service={editingService} onSave={handleSaveService as any} closeDialog={() => { setIsAddOpen(false); setEditingService(null); }} />
                     </DialogContent>
                 </Dialog>
             </CardHeader>
@@ -574,40 +624,45 @@ const ServiceTab = () => {
                     <TableHeader>
                         <TableRow>
                             <TableHead>ID</TableHead>
+                            <TableHead>Ikon</TableHead>
                             <TableHead>Nama Layanan</TableHead>
                             <TableHead>Loket</TableHead>
                             <TableHead className="text-right">Aksi</TableHead>
                         </TableRow>
                     </TableHeader>
                     <TableBody>
-                        {services.map(s => (
-                            <TableRow key={s.id}>
-                                <TableCell className="font-medium">{s.id}</TableCell>
-                                <TableCell>{s.name}</TableCell>
-                                <TableCell>{s.servingCounters?.map(getCounterName).join(', ') || 'Belum diatur'}</TableCell>
-                                <TableCell className="text-right">
-                                    <Button variant="ghost" size="icon" onClick={() => {
-                                        setEditingService(s);
-                                        setIsAddOpen(true);
-                                    }}><Edit className="h-4 w-4"/></Button>
-                                    <AlertDialog>
-                                        <AlertDialogTrigger asChild>
-                                            <Button variant="ghost" size="icon" className="text-destructive"><Trash2 className="h-4 w-4"/></Button>
-                                        </AlertDialogTrigger>
-                                        <AlertDialogContent>
-                                            <AlertDialogHeader>
-                                                <AlertDialogTitle>Anda yakin?</AlertDialogTitle>
-                                                <AlertDialogDescription>Tindakan ini tidak dapat dibatalkan. Ini akan menghapus layanan dan data counter hariannya secara permanen.</AlertDialogDescription>
-                                            </AlertDialogHeader>
-                                            <AlertDialogFooter>
-                                                <AlertDialogCancel>Batal</AlertDialogCancel>
-                                                <AlertDialogAction onClick={() => handleDeleteService(s.id)}>Hapus</AlertDialogAction>
-                                            </AlertDialogFooter>
-                                        </AlertDialogContent>
-                                    </AlertDialog>
-                                </TableCell>
-                            </TableRow>
-                        ))}
+                        {services.map(s => {
+                             const Icon = getIcon(s.icon);
+                             return (
+                                <TableRow key={s.id}>
+                                    <TableCell className="font-medium">{s.id}</TableCell>
+                                    <TableCell><Icon className="h-5 w-5" /></TableCell>
+                                    <TableCell>{s.name}</TableCell>
+                                    <TableCell>{s.servingCounters?.map(getCounterName).join(', ') || 'Belum diatur'}</TableCell>
+                                    <TableCell className="text-right">
+                                        <Button variant="ghost" size="icon" onClick={() => {
+                                            setEditingService(s);
+                                            setIsAddOpen(true);
+                                        }}><Edit className="h-4 w-4"/></Button>
+                                        <AlertDialog>
+                                            <AlertDialogTrigger asChild>
+                                                <Button variant="ghost" size="icon" className="text-destructive"><Trash2 className="h-4 w-4"/></Button>
+                                            </AlertDialogTrigger>
+                                            <AlertDialogContent>
+                                                <AlertDialogHeader>
+                                                    <AlertDialogTitle>Anda yakin?</AlertDialogTitle>
+                                                    <AlertDialogDescription>Tindakan ini tidak dapat dibatalkan. Ini akan menghapus layanan dan data counter hariannya secara permanen.</AlertDialogDescription>
+                                                </AlertDialogHeader>
+                                                <AlertDialogFooter>
+                                                    <AlertDialogCancel>Batal</AlertDialogCancel>
+                                                    <AlertDialogAction onClick={() => handleDeleteService(s.id)}>Hapus</AlertDialogAction>
+                                                </AlertDialogFooter>
+                                            </AlertDialogContent>
+                                        </AlertDialog>
+                                    </TableCell>
+                                </TableRow>
+                            )
+                        })}
                     </TableBody>
                 </Table>
             </CardContent>
@@ -747,12 +802,12 @@ export default function AdminPage() {
       {/* Sidebar */}
       <aside className={cn(
         "bg-card text-card-foreground border-r transition-all duration-300 ease-in-out",
-        "flex flex-col",
+        "flex-col hidden lg:flex",
         isSidebarOpen ? "w-64" : "w-20"
       )}>
         <div className="flex items-center justify-between h-20 border-b px-4">
              <div className={cn("flex items-center gap-2 transition-opacity duration-300", isSidebarOpen ? 'opacity-100' : 'opacity-0')}>
-                <BkpmLogo className="h-8 w-8 text-primary" />
+                <QNextLogo className="h-8 w-8 text-primary" />
                 <h1 className="text-xl font-bold text-primary tracking-tight whitespace-nowrap">
                     Dasbor Admin
                 </h1>
@@ -778,7 +833,7 @@ export default function AdminPage() {
             ))}
         </nav>
         <div className="px-4 py-4 border-t">
-            <Button variant="outline" onClick={handleLogout} className="w-full">
+            <Button variant="outline" onClick={handleLogout} className="w-full justify-center">
                 <LogOut className="h-5 w-5"/>
                 <span className={cn(isSidebarOpen ? "ml-4" : "sr-only")}>Logout</span>
             </Button>
@@ -793,7 +848,7 @@ export default function AdminPage() {
        <div className="flex-1 flex flex-col">
             <header className="bg-card shadow-sm sticky top-0 z-10 lg:hidden h-20 flex items-center px-4 justify-between">
                  <div className="flex items-center gap-2">
-                    <BkpmLogo className="h-8 w-8 text-primary" />
+                    <QNextLogo className="h-8 w-8 text-primary" />
                     <h1 className="text-xl font-bold text-primary">Dasbor Admin</h1>
                 </div>
                  <Button variant="ghost" size="icon" onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}>

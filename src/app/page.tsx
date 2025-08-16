@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import * as LucideIcons from 'lucide-react';
 import {
   Card,
   CardContent,
@@ -10,28 +11,17 @@ import {
 } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
-  Briefcase,
-  Users,
-  Monitor,
   LogIn,
-  Ticket as TicketIcon,
 } from 'lucide-react';
 import { useQueue } from '@/context/queue-context';
 import type { Service, Ticket } from '@/context/queue-context';
 import TicketModal from '@/components/ticket-modal';
-import BkpmLogo from '@/components/icons/bkpm-logo';
+import QNextLogo from '@/components/icons/q-next-logo';
 import Link from 'next/link';
 
-const serviceIcons: Record<string, React.ReactNode> = {
-  A: <Users className="h-12 w-12" />,
-  B: <Briefcase className="h-12 w-12" />,
-  C: <TicketIcon className="h-12 w-12" />,
-  DEFAULT: <TicketIcon className="h-12 w-12" />,
-};
-
-const getServiceIcon = (serviceId: string) => {
-    const firstChar = serviceId.charAt(0).toUpperCase();
-    return serviceIcons[firstChar] || serviceIcons.DEFAULT;
+const getIcon = (iconName: string): React.ComponentType<LucideIcons.LucideProps> => {
+    // @ts-ignore
+    return LucideIcons[iconName] || LucideIcons['Ticket'];
 }
 
 
@@ -56,7 +46,7 @@ export default function KioskPage() {
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex items-center justify-between h-20">
               <div className="flex items-center space-x-4">
-                <BkpmLogo className="h-10 w-10 text-primary" />
+                <QNextLogo className="h-10 w-10 text-primary" />
                 <h1 className="text-2xl font-bold text-primary tracking-tight">
                   Q-NEXT
                 </h1>
@@ -85,30 +75,35 @@ export default function KioskPage() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            {services.map((service) => (
-              <Card
-                key={service.id}
-                className="text-center transform hover:-translate-y-2 transition-transform duration-300 ease-in-out cursor-pointer shadow-lg hover:shadow-xl rounded-lg overflow-hidden"
-                onClick={() => handleServiceSelection(service)}
-              >
-                <CardHeader className="bg-primary/5 p-8">
-                  <div className="mx-auto text-primary">{getServiceIcon(service.id)}</div>
-                </CardHeader>
-                <CardContent className="p-6">
-                  <CardTitle className="text-xl font-semibold text-primary">
-                    {service.name}
-                  </CardTitle>
-                  <CardDescription className="mt-2">
-                    Klik untuk mengambil nomor antrian
-                  </CardDescription>
-                </CardContent>
-              </Card>
-            ))}
+            {services.map((service) => {
+              const Icon = getIcon(service.icon);
+              return (
+                 <Card
+                  key={service.id}
+                  className="text-center transform hover:-translate-y-2 transition-transform duration-300 ease-in-out cursor-pointer shadow-lg hover:shadow-xl rounded-lg overflow-hidden"
+                  onClick={() => handleServiceSelection(service)}
+                >
+                  <CardHeader className="bg-primary/5 p-8">
+                    <div className="mx-auto text-primary">
+                       <Icon className="h-12 w-12" />
+                    </div>
+                  </CardHeader>
+                  <CardContent className="p-6">
+                    <CardTitle className="text-xl font-semibold text-primary">
+                      {service.name}
+                    </CardTitle>
+                    <CardDescription className="mt-2">
+                      Klik untuk mengambil nomor antrian
+                    </CardDescription>
+                  </CardContent>
+                </Card>
+              )
+            })}
           </div>
         </main>
 
         <footer className="text-center py-4 text-sm text-muted-foreground">
-          © {new Date().getFullYear()} BKPM Q. All rights reserved.
+          © {new Date().getFullYear()} Q-NEXT. All rights reserved.
         </footer>
       </div>
       {selectedTicket && (

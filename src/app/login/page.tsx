@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { LogIn, User, KeyRound } from 'lucide-react';
-import BkpmLogo from '@/components/icons/bkpm-logo';
+import QNextLogo from '@/components/icons/q-next-logo';
 import Link from 'next/link';
 import { getAuth, signInWithEmailAndPassword } from 'firebase/auth';
 import { app, db } from '@/lib/firebase';
@@ -53,7 +53,8 @@ export default function LoginPage() {
       } else {
         // This case should ideally not happen if users are created from admin panel
         // But as a fallback, we create a doc.
-        userRole = (user.email === 'admin@bkpm.go.id') ? 'admin' : 'staff';
+        // TODO: Replace with your default admin email
+        userRole = (user.email === 'admin@example.com') ? 'admin' : 'staff';
         await setDoc(userDocRef, { email: user.email, role: userRole });
         
         // Also create a staff document
@@ -104,7 +105,7 @@ export default function LoginPage() {
         <form onSubmit={handleLogin}>
           <CardHeader className="text-center space-y-2">
             <div className="inline-block mx-auto">
-              <BkpmLogo className="h-14 w-14 text-primary" />
+              <QNextLogo className="h-14 w-14 text-primary" />
             </div>
             <CardTitle className="text-3xl font-bold">Login Petugas</CardTitle>
             <CardDescription>
@@ -126,7 +127,7 @@ export default function LoginPage() {
                 <Input 
                   id="email" 
                   type="email" 
-                  placeholder="admin@bkpm.go.id" 
+                  placeholder="admin@example.com" 
                   required 
                   className="pl-10"
                   value={email}

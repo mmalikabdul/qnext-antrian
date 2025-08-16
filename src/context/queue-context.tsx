@@ -3,7 +3,7 @@
 import type { ReactNode } from 'react';
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { db, app } from '@/lib/firebase';
-import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithCredential, EmailAuthProvider, signInWithEmailAndPassword, signOut } from 'firebase/auth';
+import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
 import { 
     collection, 
     onSnapshot, 
@@ -30,7 +30,7 @@ export interface Service {
   id: string;
   name: string;
   servingCounters: number[];
-  icon?: ReactNode; // Icon is UI specific, won't be in Firestore
+  icon: string; // Icon name from lucide-react
 }
 
 export interface Ticket {
@@ -88,6 +88,7 @@ interface NowServingDoc {
 interface ServiceDoc {
     name:string;
     servingCounters: number[];
+    icon: string;
 }
 
 
@@ -120,8 +121,8 @@ interface QueueContextType {
   addCounter: (counter: Omit<Counter, 'id' | 'docId'>) => Promise<void>;
   updateCounter: (counter: Counter) => Promise<void>;
   deleteCounter: (counterDocId: string) => Promise<void>;
-  addService: (service: Omit<Service, 'icon' | 'id'> & { id: string }) => Promise<void>;
-  updateService: (service: Omit<Service, 'icon'>) => Promise<void>;
+  addService: (service: Omit<Service, 'id'> & { id: string }) => Promise<void>;
+  updateService: (service: Service) => Promise<void>;
   deleteService: (serviceId: string) => Promise<void>;
   updateVideoUrl: (url: string) => Promise<void>;
 }
@@ -131,7 +132,7 @@ const QueueContext = createContext<QueueContextType | undefined>(undefined);
 const enrichTickets = (tickets: Ticket[], services: Service[]): Ticket[] => {
     return tickets.map(ticket => ({
         ...ticket,
-        service: services.find(s => s.id === ticket.serviceId) || { id: ticket.serviceId, name: 'Layanan tidak diketahui', servingCounters: [] }
+        service: services.find(s => s.id === ticket.serviceId) || { id: ticket.serviceId, name: 'Layanan tidak diketahui', servingCounters: [], icon: 'Ticket' }
     }));
 };
 
@@ -462,9 +463,6 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
         const newUser = newUserCredential.user;
 
         // 2. Immediately write the Firestore data for the new user.
-        // This write will be authenticated as the NEW user.
-        // Firestore rules MUST allow a newly created user to write their own documents.
-        // e.g., match /users/{userId} { allow create: if request.auth.uid == userId; }
         const batch = writeBatch(db);
         const userDocRef = doc(db, 'users', newUser.uid);
         batch.set(userDocRef, { email, role: 'staff' });
@@ -478,7 +476,6 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
         await signOut(tempAuth);
         
         // The component will handle redirecting the admin to the login page.
-        // This function has now done its job: create user and save data.
 
     } catch (error: any) {
         // Re-throw the error to be caught in the component
@@ -525,12 +522,20 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
       await deleteDoc(doc(db, 'counters', counterDocId));
   }
   
-  const addService = async (service: Omit<Service, 'icon' | 'id'> & { id: string }) => {
-      await setDoc(doc(db, 'services', service.id), { name: service.name, servingCounters: service.servingCounters || [] });
+  const addService = async (service: Omit<Service, 'id'> & { id: string }) => {
+      await setDoc(doc(db, 'services', service.id), { 
+          name: service.name, 
+          servingCounters: service.servingCounters || [],
+          icon: service.icon || 'Ticket' 
+      });
   }
 
-  const updateService = async (service: Omit<Service, 'icon'>) => {
-      await updateDoc(doc(db, 'services', service.id), { name: service.name, servingCounters: service.servingCounters || [] });
+  const updateService = async (service: Service) => {
+      await updateDoc(doc(db, 'services', service.id), { 
+          name: service.name, 
+          servingCounters: service.servingCounters || [],
+          icon: service.icon || 'Ticket'
+      });
   }
 
   const deleteService = async (serviceId: string) => {
@@ -566,7 +571,7 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
   return (
     <QueueContext.Provider value={{ state, loginUser, logoutUser, addTicket, callNextTicket, completeTicket, skipTicket, recallTicket, addStaff, updateStaff, deleteStaff, addCounter, updateCounter, deleteCounter, addService, updateService, deleteService, updateVideoUrl }}>
       {children}
-    </QueueContext.Provider>
+    </Queue-Context.Provider>
   );
 };
 

@@ -3,8 +3,9 @@
 import React, { useEffect, useRef, useCallback, useState } from 'react';
 import { useQueue } from '@/context/queue-context';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import BkpmLogo from '@/components/icons/bkpm-logo';
-import { Volume2, Users, Briefcase, Ticket as TicketIcon, Bell } from 'lucide-react';
+import QNextLogo from '@/components/icons/q-next-logo';
+import * as LucideIcons from 'lucide-react';
+import { Volume2, Ticket as TicketIcon, Bell } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import type { Ticket } from '@/context/queue-context';
@@ -52,16 +53,9 @@ const useSpeech = () => {
   return { speak, isReady };
 };
 
-const serviceIcons: Record<string, React.ReactNode> = {
-    A: <Users className="h-5 w-5" />,
-    B: <Briefcase className="h-5 w-5" />,
-    C: <TicketIcon className="h-5 w-5" />,
-    DEFAULT: <TicketIcon className="h-5 w-5" />,
-};
-
-const getServiceIcon = (serviceId: string) => {
-    const firstChar = serviceId.charAt(0).toUpperCase();
-    return serviceIcons[firstChar] || serviceIcons.DEFAULT;
+const getIcon = (iconName: string): React.ComponentType<LucideIcons.LucideProps> => {
+    // @ts-ignore
+    return LucideIcons[iconName] || LucideIcons['Ticket'];
 }
 
 
@@ -70,6 +64,7 @@ export default function MonitorPage() {
   const { nowServing, tickets, videoUrl } = state;
   const { speak } = useSpeech();
   const lastCalledTicketIdRef = useRef<string | null>(null);
+  const lastRecallTimestampRef = useRef<number | null>(null);
   const [currentDate, setCurrentDate] = useState('');
   const [isRecalling, setIsRecalling] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -86,16 +81,14 @@ export default function MonitorPage() {
     if (!nowServing || nowServing.ticket.id === lastCalledTicketIdRef.current) {
         return;
     }
-
-    const { ticket, counter } = nowServing;
-    const ticketNumber = ticket.number;
     
+    const { ticket, counter } = nowServing;
     lastCalledTicketIdRef.current = ticket.id;
 
     const audio = audioRef.current;
     if (audio) {
         const handleAudioEnd = () => {
-            const textToSpeak = `Nomor antrian, ${ticketNumber.split('').join(' ')}, silahkan menuju, ke loket, ${counter}`;
+            const textToSpeak = `Nomor antrian, ${ticket.number.split('').join(' ')}, silahkan menuju, ke loket, ${counter}`;
             speak(textToSpeak);
             audio.removeEventListener('ended', handleAudioEnd);
         };
@@ -114,21 +107,18 @@ export default function MonitorPage() {
         return;
     }
     
-    // Check if this recall has already been processed
-    if(recallInfo.timestamp === lastCalledTicketIdRef.current) return;
-
+    // Check if this recall has already been processed to avoid re-triggering on re-renders
+    if(recallInfo.timestamp === lastRecallTimestampRef.current) return;
+    
+    lastRecallTimestampRef.current = recallInfo.timestamp;
 
     const { ticket, counter } = nowServing;
-    const ticketNumber = ticket.number;
-
+    
     setIsRecalling(true);
     const timer = setTimeout(() => setIsRecalling(false), 2000); // Visual cue for 2s
 
-    const textToSpeak = `Panggilan ulang untuk, nomor antrian, ${ticketNumber.split('').join(' ')}, silahkan menuju, ke loket, ${counter}`;
+    const textToSpeak = `Panggilan ulang untuk, nomor antrian, ${ticket.number.split('').join(' ')}, silahkan menuju, ke loket, ${counter}`;
     speak(textToSpeak);
-    
-    // Mark this recall timestamp as processed
-    lastCalledTicketIdRef.current = recallInfo.timestamp.toString();
 
     return () => clearTimeout(timer);
   }, [state.recallInfo, nowServing, speak]);
@@ -147,14 +137,24 @@ export default function MonitorPage() {
       params.set('loop', '1');
       params.set('controls', '0');
       
+      // If it's a playlist, the URL structure is different.
       if (params.has('list')) {
         url.pathname = '/embed/videoseries';
+      } else if (url.pathname.includes('/watch')) {
+        // Handle standard /watch?v=... URLs
+        const videoId = params.get('v');
+        if (videoId) {
+           url.pathname = `/embed/${videoId}`;
+           params.delete('v');
+           params.set('playlist', videoId); // Loop requires playlist param
+        }
       } else if (url.pathname.includes('/embed/')) {
+        // Handle existing /embed/... URLs, ensure playlist is set for looping
         const videoId = url.pathname.split('/embed/')[1];
         if (!params.has('playlist')) {
             params.set('playlist', videoId);
         }
-      } 
+      }
       
       url.search = params.toString();
       return url.toString();
@@ -165,15 +165,14 @@ export default function MonitorPage() {
     }
   }
 
-
   return (
     <div className="flex flex-col h-screen bg-primary text-primary-foreground overflow-hidden font-sans">
        <audio ref={audioRef} src="https://firebasestorage.googleapis.com/v0/b/bkpm-q.appspot.com/o/chime.mp3?alt=media&token=80b953a3-a75d-45cb-a035-518335919445" preload="auto"></audio>
       <header className="px-8 py-3 flex justify-between items-center bg-black/20 shadow-lg">
         <Link href="/" className="flex items-center gap-4">
-          <BkpmLogo className="h-12 w-12" />
+          <QNextLogo className="h-12 w-12" />
           <div>
-            <h1 className="text-4xl font-bold tracking-tight">BKPM Q</h1>
+            <h1 className="text-4xl font-bold tracking-tight">Q-NEXT</h1>
             <p className="text-lg text-primary-foreground/80">Sistem Antrian Pelayanan Publik</p>
           </div>
         </Link>
@@ -233,15 +232,18 @@ export default function MonitorPage() {
             <h2 className="text-2xl font-bold text-primary-foreground/90 mb-3 px-2">ANTRIAN BERIKUTNYA</h2>
             <div className="grid grid-cols-5 gap-4 flex-1">
                 {nextInQueue.length > 0 ? (
-                    nextInQueue.map(ticket => (
+                    nextInQueue.map(ticket => {
+                      const Icon = getIcon(ticket.service.icon);
+                      return (
                         <div key={ticket.number} className="bg-background/20 rounded-lg flex flex-col items-center justify-center p-3 text-center">
                            <p className="text-4xl font-bold tracking-wider">{ticket.number}</p>
                            <p className="text-sm opacity-80 mt-1 flex items-center gap-2">
-                            {getServiceIcon(ticket.service.id)}
+                            <Icon className="h-5 w-5" />
                             {ticket.service.name}
                            </p>
                         </div>
-                    ))
+                      )
+                    })
                 ) : (
                     <div className="col-span-5 flex items-center justify-center text-primary-foreground/60 text-xl">
                         <p>Tidak ada antrian berikutnya.</p>
@@ -260,7 +262,7 @@ export default function MonitorPage() {
       <footer className="bg-black/20 p-2 shadow-inner-top">
         <div className="overflow-hidden">
             <p className="text-lg font-medium whitespace-nowrap animate-marquee">
-                Selamat datang di layanan Front Office BKPM. Kepuasan anda adalah prioritas kami. --- Mohon siapkan dokumen yang diperlukan sebelum menuju ke loket. --- Pastikan Anda mendengar panggilan nomor antrian Anda.
+                Selamat datang di layanan Front Office kami. Kepuasan anda adalah prioritas kami. --- Mohon siapkan dokumen yang diperlukan sebelum menuju ke loket. --- Pastikan Anda mendengar panggilan nomor antrian Anda.
             </p>
         </div>
       </footer>
