@@ -4,7 +4,7 @@ import React, { useEffect, useRef, useCallback, useState } from 'react';
 import { useQueue } from '@/context/queue-context';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import BkpmLogo from '@/components/icons/bkpm-logo';
-import { Volume2, Users, Briefcase, Ticket as TicketIcon } from 'lucide-react';
+import { Volume2, Users, Briefcase, Ticket as TicketIcon, Bell } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import type { Ticket } from '@/context/queue-context';
@@ -69,35 +69,47 @@ export default function MonitorPage() {
   const { state, recallTicket } = useQueue();
   const { nowServing, tickets, videoUrl } = state;
   const { speak } = useSpeech();
-  const lastSpokenRef = useRef<string | null>(null);
+  const lastCalledRef = useRef<string | null>(null);
   const [currentDate, setCurrentDate] = useState('');
+  const [isRecalling, setIsRecalling] = useState(false);
+  const audioRef = useRef<HTMLAudioElement>(null);
+
 
   useEffect(() => {
     setCurrentDate(new Date().toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long',  year: 'numeric' }));
-  }, []);
-
-  useEffect(() => {
-    if (nowServing && nowServing.ticket.number !== lastSpokenRef.current) {
-      const textToSpeak = `Nomor antrian, ${nowServing.ticket.number.split('').join(' ')}, silahkan menuju, ke loket, ${nowServing.counter}`;
-      speak(textToSpeak);
-      lastSpokenRef.current = nowServing.ticket.number;
+    
+    if (audioRef.current) {
+        audioRef.current.onended = () => {
+            if (nowServing && nowServing.ticket.number !== lastCalledRef.current) {
+                const textToSpeak = `Nomor antrian, ${nowServing.ticket.number.split('').join(' ')}, silahkan menuju, ke loket, ${nowServing.counter}`;
+                speak(textToSpeak);
+                lastCalledRef.current = nowServing.ticket.number;
+            }
+        };
     }
   }, [nowServing, speak]);
 
-  const handleRecall = () => {
-      if(nowServing) {
-        recallTicket(); // This action is for re-triggering effects if needed.
-        const textToSpeak = `Panggilan ulang untuk nomor antrian, ${nowServing.ticket.number.split('').join(' ')}, silahkan menuju, ke loket, ${nowServing.counter}`;
-        speak(textToSpeak);
-      }
-  }
+  useEffect(() => {
+    if (nowServing && nowServing.ticket.number !== lastCalledRef.current) {
+        audioRef.current?.play().catch(e => console.error("Audio play failed", e));
+    }
+    
+    // Reset recall flash
+    const recallTicketId = state.recallInfo?.ticketId;
+    if (recallTicketId && recallTicketId === nowServing?.ticket.id) {
+        setIsRecalling(true);
+        const timer = setTimeout(() => setIsRecalling(false), 2000); // Flash for 2 seconds
+        return () => clearTimeout(timer);
+    }
+  }, [nowServing, state.recallInfo]);
+
 
   const waitingTickets = tickets.filter(t => t.status === 'waiting');
   const nextInQueue: Ticket[] = waitingTickets.slice(0, 5);
 
   const getFullVideoUrl = () => {
     if (!videoUrl) return '';
-    const params = 'autoplay=1&mute=1&loop=1&controls=0';
+    const params = 'autoplay=1&mute=1&loop=1&controls=0&playlist=' + (videoUrl.split('list=')[1] || '');
     if (videoUrl.includes('?')) {
       return `${videoUrl}&${params}`;
     }
@@ -107,6 +119,7 @@ export default function MonitorPage() {
 
   return (
     <div className="flex flex-col h-screen bg-primary text-primary-foreground overflow-hidden font-sans">
+       <audio ref={audioRef} src="https://firebasestorage.googleapis.com/v0/b/studio-9a239.appspot.com/o/chime.mp3?alt=media&token=1d746564-7437-488b-a78b-3c3358f4cf8a" preload="auto"></audio>
       <header className="px-8 py-3 flex justify-between items-center bg-black/20 shadow-lg">
         <Link href="/" className="flex items-center gap-4">
           <BkpmLogo className="h-12 w-12" />
@@ -122,14 +135,13 @@ export default function MonitorPage() {
       </header>
 
       <main className="flex-1 grid grid-cols-12 grid-rows-6 gap-6 p-6">
-        {/* Video Player */}
         {videoUrl ? (
             <iframe
                 className="col-span-8 row-span-4 rounded-lg overflow-hidden shadow-2xl w-full h-full"
                 src={getFullVideoUrl()}
                 title="YouTube video player"
                 frameBorder="0"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                 allowFullScreen>
             </iframe>
         ) : (
@@ -138,17 +150,16 @@ export default function MonitorPage() {
             </div>
         )}
 
-        {/* Now Serving */}
-        <Card className="col-span-4 row-span-6 bg-background text-foreground flex flex-col shadow-2xl animate-fade-in">
+        <Card className={`col-span-4 row-span-6 bg-background text-foreground flex flex-col shadow-2xl transition-all duration-300 ${isRecalling ? 'ring-4 ring-accent' : ''}`}>
           <CardHeader className="text-center bg-primary text-primary-foreground py-4">
-            <CardTitle className="text-4xl font-bold tracking-wider">
-              SEDANG DIPANGGIL
+            <CardTitle className="text-4xl font-bold tracking-wider flex items-center justify-center gap-3">
+              <Bell className="animate-swing"/> SEDANG DIPANGGIL
             </CardTitle>
           </CardHeader>
           <CardContent className="flex-1 flex flex-col justify-center items-center w-full p-4">
             {nowServing ? (
                 <>
-                    <p className="text-[9rem] font-extrabold leading-none tracking-tight text-primary animate-pulse">
+                    <p className={`text-[9rem] font-extrabold leading-none tracking-tight text-primary transition-all duration-300 ${isRecalling ? 'scale-110' : ''}`}>
                         {nowServing.ticket.number}
                     </p>
                     <div className="mt-6 text-center w-full">
@@ -157,7 +168,7 @@ export default function MonitorPage() {
                             LOKET {nowServing.counter}
                         </p>
                     </div>
-                     <Button onClick={handleRecall} variant="secondary" size="lg" className="mt-auto w-full text-lg py-6">
+                     <Button onClick={() => nowServing && recallTicket(nowServing.ticket.id)} variant="secondary" size="lg" className="mt-auto w-full text-lg py-6" disabled={!nowServing}>
                         <Volume2 className="mr-2 h-6 w-6"/> Panggil Ulang
                      </Button>
                 </>
@@ -170,7 +181,6 @@ export default function MonitorPage() {
           </CardContent>
         </Card>
         
-        {/* Next In Queue */}
         <div className="col-span-8 row-span-2 bg-card/80 rounded-lg p-4 shadow-xl flex flex-col">
             <h2 className="text-2xl font-bold text-primary-foreground/90 mb-3 px-2">ANTRIAN BERIKUTNYA</h2>
             <div className="grid grid-cols-5 gap-4 flex-1">
@@ -189,7 +199,7 @@ export default function MonitorPage() {
                         <p>Tidak ada antrian berikutnya.</p>
                     </div>
                 )}
-                 {Array.from({ length: 5 - nextInQueue.length }).map((_, i) => (
+                 {Array.from({ length: Math.max(0, 5 - nextInQueue.length) }).map((_, i) => (
                     <div key={`placeholder-${i}`} className="bg-background/10 rounded-lg flex items-center justify-center p-3 text-2xl font-bold text-primary-foreground/30">
                         -
                     </div>
@@ -216,12 +226,15 @@ export default function MonitorPage() {
           animation: marquee 30s linear infinite;
           padding-left: 100%;
         }
-        @keyframes fade-in {
-            from { opacity: 0; transform: scale(0.95); }
-            to { opacity: 1; transform: scale(1); }
+        @keyframes swing {
+          0%, 100% { transform: rotate(0); }
+          20% { transform: rotate(15deg); }
+          40% { transform: rotate(-10deg); }
+          60% { transform: rotate(5deg); }
+          80% { transform: rotate(-5deg); }
         }
-        .animate-fade-in {
-            animation: fade-in 0.5s ease-out forwards;
+        .animate-swing {
+            animation: swing 1.5s ease-in-out;
         }
       `}</style>
     </div>

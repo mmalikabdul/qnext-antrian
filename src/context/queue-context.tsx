@@ -39,12 +39,17 @@ export interface Ticket {
   serviceId: string;
   service: Service; // This will be enriched data
   timestamp: Date;
-  status: 'waiting' | 'serving' | 'done';
+  status: 'waiting' | 'serving' | 'done' | 'skipped';
 }
 
 export interface ServingInfo {
   ticket: Ticket;
   counter: number;
+}
+
+export interface RecallInfo {
+    ticketId: string;
+    timestamp: number;
 }
 
 export interface Staff {
@@ -73,7 +78,7 @@ export interface User {
 interface TicketDoc {
     serviceId: string;
     timestamp: Timestamp;
-    status: 'waiting' | 'serving' | 'done';
+    status: 'waiting' | 'serving' | 'done' | 'skipped';
     number: string;
 }
 interface NowServingDoc {
@@ -90,6 +95,7 @@ interface QueueState {
   tickets: Ticket[];
   servingHistory: ServingInfo[];
   nowServing: ServingInfo | null;
+  recallInfo: RecallInfo | null;
   counters: Counter[];
   services: Service[];
   staff: Staff[];
@@ -106,7 +112,8 @@ interface QueueContextType {
   addTicket: (service: Service) => Promise<Ticket | null>;
   callNextTicket: (serviceId: string, counter: number) => Promise<void>;
   completeTicket: (ticketId: string) => Promise<void>;
-  recallTicket: () => void;
+  skipTicket: (ticketId: string) => Promise<void>;
+  recallTicket: (ticketId: string) => void;
   addStaff: (staffData: any) => Promise<void>;
   updateStaff: (staff: Staff) => Promise<void>;
   deleteStaff: (staffId: string) => Promise<void>;
@@ -134,6 +141,7 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
     tickets: [],
     servingHistory: [],
     nowServing: null,
+    recallInfo: null,
     counters: [],
     services: [],
     staff: [],
@@ -403,16 +411,19 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
         toast({ title: 'Error', description: 'Gagal memanggil tiket berikutnya.', variant: 'destructive'});
     }
   };
+
+  const clearServingAndRecall = async () => {
+    const batch = writeBatch(db);
+    const nowServingSnapshot = await getDocs(collection(db, 'nowServing'));
+    nowServingSnapshot.forEach(doc => batch.delete(doc.ref));
+    await batch.commit();
+    setState(prevState => ({ ...prevState, nowServing: null, recallInfo: null }));
+  };
   
   const completeTicket = async (ticketId: string) => {
     try {
-        const batch = writeBatch(db);
-        batch.update(doc(db, 'tickets', ticketId), { status: 'done' });
-        
-        const nowServingSnapshot = await getDocs(query(collection(db, 'nowServing'), where('ticketId', '==', ticketId)));
-        nowServingSnapshot.forEach(doc => batch.delete(doc.ref));
-
-        await batch.commit();
+        await updateDoc(doc(db, 'tickets', ticketId), { status: 'done' });
+        await clearServingAndRecall();
         toast({ title: "Layanan Selesai", description: "Antrian telah selesai dilayani."});
 
     } catch (error) {
@@ -420,13 +431,24 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
         toast({ title: 'Error', description: 'Gagal menyelesaikan tiket.', variant: 'destructive'});
     }
   };
-  
-  const recallTicket = () => {
-    if(state.nowServing) {
-        toast({ title: "Panggilan Ulang", description: `Memanggil kembali nomor antrian ${state.nowServing.ticket.number}.`})
-        // This is a UI-only action, but can be used to re-trigger voice synthesis
-        console.log("Recalling ticket:", state.nowServing?.ticket.number);
+
+  const skipTicket = async (ticketId: string) => {
+    try {
+        await updateDoc(doc(db, 'tickets', ticketId), { status: 'skipped' });
+        await clearServingAndRecall();
+        toast({ title: "Antrian Dilewati", description: "Antrian telah ditandai sebagai dilewati."});
+
+    } catch (error) {
+        console.error("Error skipping ticket: ", error);
+        toast({ title: 'Error', description: 'Gagal melewati tiket.', variant: 'destructive'});
     }
+  };
+  
+  const recallTicket = (ticketId: string) => {
+    setState(prevState => ({...prevState, recallInfo: { ticketId, timestamp: Date.now() }}))
+    // This is now primarily a UI action to trigger a visual cue on the monitor.
+    // No toast needed as it's a silent action.
+    console.log("Recalling ticket:", ticketId);
   };
 
   // --- Admin Functions ---
@@ -542,7 +564,7 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
 
 
   return (
-    <QueueContext.Provider value={{ state, loginUser, logoutUser, addTicket, callNextTicket, completeTicket, recallTicket, addStaff, updateStaff, deleteStaff, addCounter, updateCounter, deleteCounter, addService, updateService, deleteService, updateVideoUrl }}>
+    <QueueContext.Provider value={{ state, loginUser, logoutUser, addTicket, callNextTicket, completeTicket, skipTicket, recallTicket, addStaff, updateStaff, deleteStaff, addCounter, updateCounter, deleteCounter, addService, updateService, deleteService, updateVideoUrl }}>
       {children}
     </QueueContext.Provider>
   );

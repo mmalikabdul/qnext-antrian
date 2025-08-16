@@ -20,6 +20,7 @@ import {
   Clock,
   Ticket as TicketIcon,
   Building,
+  SkipForward,
 } from 'lucide-react';
 import BkpmLogo from '@/components/icons/bkpm-logo';
 import { useToast } from '@/hooks/use-toast';
@@ -43,7 +44,7 @@ const getServiceIcon = (serviceId: string) => {
 
 export default function StaffPage() {
   const router = useRouter();
-  const { state, callNextTicket, completeTicket, recallTicket, logoutUser } = useQueue();
+  const { state, callNextTicket, completeTicket, recallTicket, skipTicket, logoutUser } = useQueue();
   const { tickets, nowServing, services, currentUser, counters, authLoaded } = state;
   const { toast } = useToast();
   const auth = getAuth(app);
@@ -103,6 +104,12 @@ export default function StaffPage() {
   const handleComplete = async () => {
     if (currentServingTicket) {
         await completeTicket(currentServingTicket.id);
+    }
+  }
+
+  const handleSkip = async () => {
+    if (currentServingTicket) {
+        await skipTicket(currentServingTicket.id);
     }
   }
   
@@ -207,8 +214,12 @@ export default function StaffPage() {
                       {new Date(currentServingTicket.timestamp).toLocaleTimeString('id-ID')}
                     </div>
                     <div className="pt-4 space-y-2">
-                       <Button onClick={recallTicket} size="lg" variant="secondary" className="w-full">
+                       <Button onClick={() => recallTicket(currentServingTicket.id)} size="lg" variant="secondary" className="w-full">
                         Panggil Ulang
+                      </Button>
+                      <Button onClick={handleSkip} size="lg" variant="outline" className="w-full">
+                        <SkipForward className="mr-2 h-4 w-4" />
+                        Lewati Antrian
                       </Button>
                       <Button onClick={handleComplete} size="lg" className="w-full">
                         <CheckCircle className="mr-2 h-4 w-4" />
