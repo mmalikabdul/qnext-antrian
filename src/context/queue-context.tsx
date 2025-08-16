@@ -18,7 +18,8 @@ import {
     Timestamp,
     serverTimestamp,
     writeBatch,
-    runTransaction
+    runTransaction,
+    setDoc
 } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 
@@ -287,6 +288,7 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
 
         if (newTicketData) {
             const finalTicketData = newTicketData as Ticket;
+            toast({ title: "Sukses", description: `Tiket ${finalTicketData.number} berhasil dibuat.` });
             setState(prevState => ({
                 ...prevState,
                 tickets: enrichTickets([...prevState.tickets, finalTicketData], prevState.services)
@@ -304,28 +306,32 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
 
   const callNextTicket = async (serviceId: string, counter: number) => {
     try {
-        const q = query(collection(db, 'tickets'), where('serviceId', '==', serviceId), where('status', '==', 'waiting'), orderBy('timestamp'), limit(1));
-        const waitingTicketsSnapshot = await getDocs(q);
+        // Find the next ticket from the local state
+        const nextTicket = state.tickets
+            .filter(t => t.serviceId === serviceId && t.status === 'waiting')
+            .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
+            [0];
 
-        if (waitingTicketsSnapshot.empty) {
+        if (!nextTicket) {
             toast({ title: 'Info', description: 'Tidak ada antrian untuk layanan ini.'});
             return;
         }
 
-        const nextTicketDoc = waitingTicketsSnapshot.docs[0];
-
         const batch = writeBatch(db);
 
         // Update ticket status
-        batch.update(doc(db, 'tickets', nextTicketDoc.id), { status: 'serving' });
+        batch.update(doc(db, 'tickets', nextTicket.id), { status: 'serving' });
 
         // Set nowServing (delete old one first)
         const nowServingSnapshot = await getDocs(collection(db, 'nowServing'));
         nowServingSnapshot.forEach(doc => batch.delete(doc.ref));
+        
         const nowServingCol = collection(db, 'nowServing');
-        batch.set(doc(nowServingCol), { ticketId: nextTicketDoc.id, counter });
+        const nowServingRef = doc(nowServingCol); // Create a new document reference
+        batch.set(nowServingRef, { ticketId: nextTicket.id, counter });
         
         await batch.commit();
+        toast({ title: "Memanggil Antrian", description: `Nomor ${nextTicket.number} dipanggil ke loket ${counter}.`})
 
     } catch (error) {
         console.error("Error calling next ticket: ", error);
@@ -339,11 +345,12 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
         // Mark ticket as done
         batch.update(doc(db, 'tickets', ticketId), { status: 'done' });
         
-        // Clear nowServing
+        // Clear nowServing if it's the one being completed
         const nowServingSnapshot = await getDocs(query(collection(db, 'nowServing'), where('ticketId', '==', ticketId)));
         nowServingSnapshot.forEach(doc => batch.delete(doc.ref));
 
         await batch.commit();
+        toast({ title: "Layanan Selesai", description: "Antrian telah selesai dilayani."});
 
     } catch (error) {
         console.error("Error completing ticket: ", error);
@@ -354,7 +361,10 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
   const recallTicket = () => {
     // This is purely a UI trigger, now handled by useEffect on nowServing change in MonitorPage.
     // If we need to force a re-render or some state change, it can be done here.
-    console.log("Recalling ticket:", state.nowServing?.ticket.number);
+    if(state.nowServing) {
+        toast({ title: "Panggilan Ulang", description: `Memanggil kembali nomor antrian ${state.nowServing.ticket.number}.`})
+        console.log("Recalling ticket:", state.nowServing?.ticket.number);
+    }
   };
 
   // --- Admin Functions ---
@@ -384,18 +394,28 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
   }
   
   const addService = async (service: Omit<Service, 'icon' | 'name'> & {id: string, name: string}) => {
-      await updateDoc(doc(db, 'services', service.id), { name: service.name });
+      await setDoc(doc(db, 'services', service.id), { name: service.name });
   }
   const updateService = async (service: Omit<Service, 'icon'>) => {
       await updateDoc(doc(db, 'services', service.id), { name: service.name });
   }
   const deleteService = async (serviceId: string) => {
-      const batch = writeBatch(db);
-      const serviceRef = doc(db, 'services', serviceId);
-      batch.delete(serviceRef);
-      // Optional: clean up daily counters for this service if needed, though they are namespaced by date
-      // For simplicity, we'll leave them. They won't be used if the service is gone.
-      await batch.commit();
+    try {
+        const batch = writeBatch(db);
+        
+        const serviceRef = doc(db, 'services', serviceId);
+        batch.delete(serviceRef);
+
+        const todayStr = new Date().toISOString().split('T')[0];
+        const dailyCounterRef = doc(db, 'counters_daily', `${serviceId}_${todayStr}`);
+        batch.delete(dailyCounterRef); // Also delete today's counter
+
+        await batch.commit();
+        toast({ title: "Sukses", description: "Layanan berhasil dihapus." });
+    } catch (e) {
+        console.error("Failed to delete service and its counters", e);
+        toast({ title: "Error", description: "Gagal menghapus layanan.", variant: "destructive" });
+    }
   }
 
 
