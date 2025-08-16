@@ -2,34 +2,14 @@
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
-import {
-  Bar,
-  BarChart,
-  ResponsiveContainer,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-} from 'recharts';
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-} from '@/components/ui/card';
+import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import {
-  Users,
-  Briefcase,
-  Ticket,
-  Clock,
-  LogOut,
-  BarChart2,
-} from 'lucide-react';
+import { Users, Briefcase, Ticket, Clock, LogOut, BarChart2, Settings, UserCog, Building, FileText, PlusCircle, Edit, Trash2 } from 'lucide-react';
 import BkpmLogo from '@/components/icons/bkpm-logo';
 import { useQueue } from '@/context/queue-context';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 const chartData = [
   { name: '09:00', 'Layanan Konsultasi': 12, 'Pengajuan Perizinan': 20, 'Layanan Prioritas': 5 },
@@ -40,14 +20,216 @@ const chartData = [
   { name: '15:00', 'Layanan Konsultasi': 10, 'Pengajuan Perizinan': 15, 'Layanan Prioritas': 6 },
 ];
 
-export default function AdminPage() {
-  const router = useRouter();
+const DashboardTab = () => {
   const { state } = useQueue();
   const { tickets } = state;
 
   const totalTickets = tickets.length;
   const waitingTickets = tickets.filter(t => t.status === 'waiting').length;
   const servedTickets = tickets.filter(t => t.status === 'done').length;
+
+  return (
+    <div className="space-y-8">
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Antrian Hari Ini</CardTitle>
+            <Ticket className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{totalTickets}</div>
+            <p className="text-xs text-muted-foreground">Jumlah total tiket yang diambil</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Sedang Menunggu</CardTitle>
+            <Users className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{waitingTickets}</div>
+            <p className="text-xs text-muted-foreground">Jumlah pelanggan yang sedang dalam antrian</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Telah Dilayani</CardTitle>
+            <Briefcase className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{servedTickets}</div>
+            <p className="text-xs text-muted-foreground">Jumlah pelanggan yang telah selesai dilayani</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Waktu Tunggu Rata-rata</CardTitle>
+            <Clock className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">~5 mnt</div>
+            <p className="text-xs text-muted-foreground">Perkiraan waktu tunggu (data dummy)</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center">
+            <BarChart2 className="mr-2 h-5 w-5" />
+            Statistik Antrian per Jam
+          </CardTitle>
+          <CardDescription>Jumlah antrian yang masuk untuk setiap layanan per jam.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ResponsiveContainer width="100%" height={350}>
+            <BarChart data={chartData}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="name" stroke="#555" />
+              <YAxis stroke="#555" />
+              <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--background))', borderColor: 'hsl(var(--border))', borderRadius: 'var(--radius)' }} />
+              <Legend />
+              <Bar dataKey="Layanan Konsultasi" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="Pengajuan Perizinan" fill="hsl(var(--primary) / 0.7)" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="Layanan Prioritas" fill="hsl(var(--accent))" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </CardContent>
+      </Card>
+    </div>
+  );
+};
+
+const StaffTab = () => {
+    const { state: { staff } } = useQueue();
+    return (
+        <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+                <div>
+                    <CardTitle>Manajemen Petugas</CardTitle>
+                    <CardDescription>Tambah, edit, atau hapus data petugas.</CardDescription>
+                </div>
+                <Button><PlusCircle className="mr-2"/> Tambah Petugas</Button>
+            </CardHeader>
+            <CardContent>
+                <Table>
+                    <TableHeader>
+                        <TableRow>
+                            <TableHead>Nama</TableHead>
+                            <TableHead>Loket yang Dilayani</TableHead>
+                            <TableHead className="text-right">Aksi</TableHead>
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                        {staff.map(s => (
+                            <TableRow key={s.id}>
+                                <TableCell className="font-medium">{s.name}</TableCell>
+                                <TableCell>{s.counters.join(', ')}</TableCell>
+                                <TableCell className="text-right">
+                                    <Button variant="ghost" size="icon"><Edit className="h-4 w-4"/></Button>
+                                    <Button variant="ghost" size="icon" className="text-destructive"><Trash2 className="h-4 w-4"/></Button>
+                                </TableCell>
+                            </TableRow>
+                        ))}
+                    </TableBody>
+                </Table>
+            </CardContent>
+        </Card>
+    );
+}
+
+const CounterTab = () => {
+    const { state: { counters } } = useQueue();
+    return (
+        <Card>
+            <CardHeader  className="flex flex-row items-center justify-between">
+                <div>
+                    <CardTitle>Manajemen Loket</CardTitle>
+                    <CardDescription>Atur loket yang tersedia untuk melayani.</CardDescription>
+                </div>
+                 <Button><PlusCircle className="mr-2"/> Tambah Loket</Button>
+            </CardHeader>
+            <CardContent>
+                 <Table>
+                    <TableHeader>
+                        <TableRow>
+                            <TableHead>Nama Loket</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead className="text-right">Aksi</TableHead>
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                        {counters.map(c => (
+                            <TableRow key={c.id}>
+                                <TableCell className="font-medium">{c.name}</TableCell>
+                                <TableCell>{c.status === 'open' ? 'Buka' : 'Tutup'}</TableCell>
+                                <TableCell className="text-right">
+                                    <Button variant="ghost" size="icon"><Edit className="h-4 w-4"/></Button>
+                                    <Button variant="ghost" size="icon" className="text-destructive"><Trash2 className="h-4 w-4"/></Button>
+                                </TableCell>
+                            </TableRow>
+                        ))}
+                    </TableBody>
+                </Table>
+            </CardContent>
+        </Card>
+    );
+}
+
+const ServiceTab = () => {
+    const { state: { services } } = useQueue();
+    return (
+        <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+                <div>
+                    <CardTitle>Manajemen Layanan</CardTitle>
+                    <CardDescription>Atur layanan yang dapat dipilih oleh pelanggan.</CardDescription>
+                </div>
+                <Button><PlusCircle className="mr-2"/> Tambah Layanan</Button>
+            </CardHeader>
+            <CardContent>
+                <Table>
+                    <TableHeader>
+                        <TableRow>
+                            <TableHead>ID Layanan</TableHead>
+                            <TableHead>Nama Layanan</TableHead>
+                            <TableHead className="text-right">Aksi</TableHead>
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                        {services.map(s => (
+                            <TableRow key={s.id}>
+                                <TableCell className="font-medium">{s.id}</TableCell>
+                                <TableCell>{s.name}</TableCell>
+                                <TableCell className="text-right">
+                                    <Button variant="ghost" size="icon"><Edit className="h-4 w-4"/></Button>
+                                    <Button variant="ghost" size="icon" className="text-destructive"><Trash2 className="h-4 w-4"/></Button>
+                                </TableCell>
+                            </TableRow>
+                        ))}
+                    </TableBody>
+                </Table>
+            </CardContent>
+        </Card>
+    );
+}
+
+const ReportTab = () => {
+    return (
+        <Card>
+            <CardHeader>
+                <CardTitle>Laporan</CardTitle>
+                <CardDescription>Lihat dan ekspor laporan antrian.</CardDescription>
+            </CardHeader>
+            <CardContent>
+                <p>Fitur laporan akan segera tersedia.</p>
+            </CardContent>
+        </Card>
+    )
+}
+
+export default function AdminPage() {
+  const router = useRouter();
 
   const handleLogout = () => {
     router.push('/login');
@@ -73,96 +255,20 @@ export default function AdminPage() {
       </header>
 
       <main className="flex-1 container mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="space-y-8">
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">
-                  Total Antrian Hari Ini
-                </CardTitle>
-                <Ticket className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{totalTickets}</div>
-                <p className="text-xs text-muted-foreground">
-                  Jumlah total tiket yang diambil
-                </p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">
-                  Sedang Menunggu
-                </CardTitle>
-                <Users className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{waitingTickets}</div>
-                <p className="text-xs text-muted-foreground">
-                  Jumlah pelanggan yang sedang dalam antrian
-                </p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Telah Dilayani</CardTitle>
-                <Briefcase className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{servedTickets}</div>
-                <p className="text-xs text-muted-foreground">
-                  Jumlah pelanggan yang telah selesai dilayani
-                </p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">
-                  Waktu Tunggu Rata-rata
-                </CardTitle>
-                <Clock className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">~5 mnt</div>
-                <p className="text-xs text-muted-foreground">
-                  Perkiraan waktu tunggu (data dummy)
-                </p>
-              </CardContent>
-            </Card>
-          </div>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center">
-                <BarChart2 className="mr-2 h-5 w-5" />
-                Statistik Antrian per Jam
-              </CardTitle>
-              <CardDescription>
-                Jumlah antrian yang masuk untuk setiap layanan per jam.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={350}>
-                <BarChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="name" stroke="#555" />
-                  <YAxis stroke="#555" />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: 'hsl(var(--background))',
-                      borderColor: 'hsl(var(--border))',
-                      borderRadius: 'var(--radius)'
-                    }}
-                  />
-                  <Legend />
-                  <Bar dataKey="Layanan Konsultasi" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="Pengajuan Perizinan" fill="hsl(var(--primary) / 0.7)" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="Layanan Prioritas" fill="hsl(var(--accent))" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-        </div>
+        <Tabs defaultValue="dashboard">
+            <TabsList className="mb-4">
+                <TabsTrigger value="dashboard"><BarChart2 className="mr-2"/> Dasbor</TabsTrigger>
+                <TabsTrigger value="staff"><UserCog className="mr-2"/> Petugas</TabsTrigger>
+                <TabsTrigger value="counters"><Building className="mr-2"/> Loket</TabsTrigger>
+                <TabsTrigger value="services"><Settings className="mr-2"/> Layanan</TabsTrigger>
+                <TabsTrigger value="reports"><FileText className="mr-2"/> Laporan</TabsTrigger>
+            </TabsList>
+            <TabsContent value="dashboard"><DashboardTab /></TabsContent>
+            <TabsContent value="staff"><StaffTab /></TabsContent>
+            <TabsContent value="counters"><CounterTab /></TabsContent>
+            <TabsContent value="services"><ServiceTab /></TabsContent>
+            <TabsContent value="reports"><ReportTab /></TabsContent>
+        </Tabs>
       </main>
     </div>
   );

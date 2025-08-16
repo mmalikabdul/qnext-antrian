@@ -22,22 +22,22 @@ import TicketModal from '@/components/ticket-modal';
 import BkpmLogo from '@/components/icons/bkpm-logo';
 import Link from 'next/link';
 
-const services: Service[] = [
-  { id: 'A', name: 'Layanan Konsultasi', icon: <Users className="h-12 w-12" /> },
-  {
-    id: 'B',
-    name: 'Pengajuan Perizinan',
-    icon: <Briefcase className="h-12 w-12" />,
-  },
-  {
-    id: 'C',
-    name: 'Layanan Prioritas',
-    icon: <Ticket className="h-12 w-12" />,
-  },
-];
+const serviceIcons: Record<string, React.ReactNode> = {
+  A: <Users className="h-12 w-12" />,
+  B: <Briefcase className="h-12 w-12" />,
+  C: <Ticket className="h-12 w-12" />,
+  DEFAULT: <Ticket className="h-12 w-12" />,
+};
+
+const getServiceIcon = (serviceId: string) => {
+    const firstChar = serviceId.charAt(0).toUpperCase();
+    return serviceIcons[firstChar] || serviceIcons.DEFAULT;
+}
+
 
 export default function KioskPage() {
-  const { addTicket } = useQueue();
+  const { state, addTicket } = useQueue();
+  const { services } = state;
   const [selectedTicket, setSelectedTicket] = React.useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = React.useState(false);
 
@@ -96,7 +96,7 @@ export default function KioskPage() {
                 onClick={() => handleServiceSelection(service)}
               >
                 <CardHeader className="bg-primary/5 p-8">
-                  <div className="mx-auto text-primary">{service.icon}</div>
+                  <div className="mx-auto text-primary">{getServiceIcon(service.id)}</div>
                 </CardHeader>
                 <CardContent className="p-6">
                   <CardTitle className="text-xl font-semibold text-primary">

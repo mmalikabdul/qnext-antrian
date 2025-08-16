@@ -21,11 +21,25 @@ export interface ServingInfo {
   counter: number;
 }
 
+export interface Staff {
+  id: string;
+  name: string;
+  counters: number[];
+}
+
+export interface Counter {
+    id: number;
+    name: string;
+    status: 'open' | 'closed';
+}
+
 interface QueueState {
   tickets: Ticket[];
   servingHistory: ServingInfo[];
   nowServing: ServingInfo | null;
-  counters: number[];
+  counters: Counter[];
+  services: Service[];
+  staff: Staff[];
   serviceCounters: Record<string, number>;
 }
 
@@ -34,14 +48,32 @@ type Action =
   | { type: 'CALL_NEXT'; payload: { serviceId: string; counter: number } }
   | { type: 'COMPLETE_TICKET'; payload: { ticketNumber: string } }
   | { type: 'RECALL_TICKET' }
-  | { type: 'RESET_STATE' };
+  | { type: 'RESET_STATE' }
+  | { type: 'SET_SERVICES', payload: Service[] }
+  | { type: 'SET_COUNTERS', payload: Counter[] }
+  | { type: 'SET_STAFF', payload: Staff[] };
 
 
 const initialState: QueueState = {
   tickets: [],
   servingHistory: [],
   nowServing: null,
-  counters: [1, 2, 3, 4],
+  counters: [
+      {id: 1, name: 'Loket 1', status: 'open'},
+      {id: 2, name: 'Loket 2', status: 'open'},
+      {id: 3, name: 'Loket 3', status: 'closed'},
+      {id: 4, name: 'Loket 4', status: 'open'},
+  ],
+  services: [
+    { id: 'A', name: 'Layanan Konsultasi', icon: 'Users' },
+    { id: 'B', name: 'Pengajuan Perizinan', icon: 'Briefcase' },
+    { id: 'C', name: 'Layanan Prioritas', icon: 'Ticket' },
+  ].map(s => ({...s, icon: <></>})),
+  staff: [
+      {id: '1', name: 'Budi', counters: [1]},
+      {id: '2', name: 'Ani', counters: [2]},
+      {id: '3', name: 'Candra', counters: [4]},
+  ],
   serviceCounters: {},
 };
 
@@ -64,7 +96,10 @@ function queueReducer(state: QueueState, action: Action): QueueState {
       }
 
       const nextTicket = waitingTickets[0];
-      const updatedNowServing = { ticket: { ...nextTicket, status: 'serving' as const }, counter };
+      const service = state.services.find(s => s.id === serviceId);
+      if(!service) return state;
+
+      const updatedNowServing = { ticket: { ...nextTicket, status: 'serving' as const, service }, counter };
 
       return {
         ...state,
@@ -88,6 +123,12 @@ function queueReducer(state: QueueState, action: Action): QueueState {
         // This action doesn't change state but is useful for triggering effects like speech
         return state;
     }
+    case 'SET_SERVICES':
+        return { ...state, services: action.payload };
+    case 'SET_COUNTERS':
+        return { ...state, counters: action.payload };
+    case 'SET_STAFF':
+        return { ...state, staff: action.payload };
     case 'RESET_STATE':
       return initialState;
     default:
@@ -101,6 +142,9 @@ interface QueueContextType {
   callNextTicket: (serviceId: string, counter: number) => void;
   completeTicket: (ticketNumber: string) => void;
   recallTicket: () => void;
+  setServices: (services: Service[]) => void;
+  setCounters: (counters: Counter[]) => void;
+  setStaff: (staff: Staff[]) => void;
 }
 
 const QueueContext = createContext<QueueContextType | undefined>(undefined);
@@ -138,12 +182,23 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
     dispatch({ type: 'RECALL_TICKET' });
   }
 
+  const setServices = (services: Service[]) => {
+      dispatch({type: 'SET_SERVICES', payload: services});
+  }
+  const setCounters = (counters: Counter[]) => {
+      dispatch({type: 'SET_COUNTERS', payload: counters});
+  }
+  const setStaff = (staff: Staff[]) => {
+      dispatch({type: 'SET_STAFF', payload: staff});
+  }
+
+
   if (!isClient) {
     return null; // or a loading spinner
   }
 
   return (
-    <QueueContext.Provider value={{ state, addTicket, callNextTicket, completeTicket, recallTicket }}>
+    <QueueContext.Provider value={{ state, addTicket, callNextTicket, completeTicket, recallTicket, setServices, setCounters, setStaff }}>
       {children}
     </QueueContext.Provider>
   );

@@ -23,24 +23,26 @@ import {
 import BkpmLogo from '@/components/icons/bkpm-logo';
 import type { Service } from '@/context/queue-context';
 
-const services: Omit<Service, 'icon'>[] = [
-  { id: 'A', name: 'Layanan Konsultasi' },
-  { id: 'B', name: 'Pengajuan Perizinan' },
-  { id: 'C', name: 'Layanan Prioritas' },
-];
 
 const serviceIcons: Record<string, React.ReactNode> = {
     A: <Users className="h-6 w-6 text-primary" />,
     B: <Briefcase className="h-6 w-6 text-primary" />,
     C: <TicketIcon className="h-6 w-6 text-primary" />,
+    DEFAULT: <TicketIcon className="h-6 w-6 text-primary" />,
 };
+
+const getServiceIcon = (serviceId: string) => {
+    const firstChar = serviceId.charAt(0).toUpperCase();
+    return serviceIcons[firstChar] || serviceIcons.DEFAULT;
+}
+
 
 const COUNTER_NUMBER = 1; // Static counter number for this demo staff member
 
 export default function StaffPage() {
   const router = useRouter();
   const { state, callNextTicket, completeTicket, recallTicket } = useQueue();
-  const { tickets, nowServing } = state;
+  const { tickets, nowServing, services } = state;
 
   const currentServingTicket = nowServing && nowServing.counter === COUNTER_NUMBER ? nowServing.ticket : null;
 
@@ -106,13 +108,13 @@ export default function StaffPage() {
                     <div className="flex items-start justify-between">
                         <div>
                             <h3 className="font-semibold text-lg">{service.name}</h3>
-                            <p className="text-sm text-muted-foreground">Antrian: {waitingCountByService[service.id]}</p>
+                            <p className="text-sm text-muted-foreground">Antrian: {waitingCountByService[service.id] || 0}</p>
                         </div>
-                        {serviceIcons[service.id]}
+                        {getServiceIcon(service.id)}
                     </div>
                     <Button
                       onClick={() => handleCallNext(service.id)}
-                      disabled={waitingCountByService[service.id] === 0 || !!currentServingTicket}
+                      disabled={(waitingCountByService[service.id] || 0) === 0 || !!currentServingTicket}
                       className="w-full mt-4"
                     >
                       <PhoneCall className="mr-2 h-4 w-4" />
