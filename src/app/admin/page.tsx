@@ -656,7 +656,7 @@ const VideoTab = () => {
                         placeholder="https://www.youtube.com/embed/videoseries?list=..."
                     />
                     <p className="text-sm text-muted-foreground">
-                        Pastikan Anda menggunakan URL "embed" dari YouTube, bukan URL biasa. Contoh: <strong>https://www.youtube.com/embed/videoseries?list=PL2_3w_50q_p_4i_t_aA-i1l_n5s-ZqGcB</strong>
+                        Pastikan Anda menggunakan URL "embed" dari YouTube. Contoh: <strong>https://www.youtube.com/embed/videoseries?list=PL2_3w_50q_p_4i_t_aA-i1l_n5s-ZqGcB</strong>
                     </p>
                 </div>
                 <Button onClick={handleSave} disabled={isLoading}>

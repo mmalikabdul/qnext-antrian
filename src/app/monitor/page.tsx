@@ -90,6 +90,15 @@ export default function MonitorPage() {
   const waitingTickets = tickets.filter(t => t.status === 'waiting');
   const nextInQueue: Ticket[] = waitingTickets.slice(0, 5);
 
+  const getFullVideoUrl = () => {
+    if (!videoUrl) return '';
+    const params = 'autoplay=1&mute=1&loop=1&controls=0';
+    if (videoUrl.includes('?')) {
+      return `${videoUrl}&${params}`;
+    }
+    return `${videoUrl}?${params}`;
+  }
+
 
   return (
     <div className="flex flex-col h-screen bg-primary text-primary-foreground overflow-hidden font-sans">
@@ -113,7 +122,7 @@ export default function MonitorPage() {
            {videoUrl ? (
                 <iframe
                     className="w-full h-full"
-                    src={`${videoUrl}&autoplay=1&mute=1&loop=1&controls=0`}
+                    src={getFullVideoUrl()}
                     title="YouTube video player"
                     frameBorder="0"
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
