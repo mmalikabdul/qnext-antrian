@@ -72,13 +72,14 @@ export default function LoginPage() {
         router.push('/staff');
       }
     } catch (error: any) {
-      console.error("Login error details:", error);
+      setIsLoading(false);
       if (error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password' || error.code === 'auth/user-not-found') {
+        console.error("Login failed: Invalid credentials provided.", error);
         setError('Email atau password salah. Silakan coba lagi.');
       } else {
+        console.error("An unexpected error occurred during login:", error);
         setError('Terjadi kesalahan saat login. Silakan coba lagi nanti.');
       }
-      setIsLoading(false);
     }
   };
 
