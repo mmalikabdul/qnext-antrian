@@ -23,6 +23,7 @@ import {
   ThumbsUp,
   XCircle,
   List,
+  Volume2,
 } from 'lucide-react';
 import QNextLogo from '@/components/icons/q-next-logo';
 import { useToast } from '@/hooks/use-toast';
@@ -161,6 +162,13 @@ export default function StaffPage() {
         await skipTicket(currentServingTicket.id);
     }
   }
+
+  const handleRecall = () => {
+    if (currentServingTicket) {
+      recallTicket(currentServingTicket.id);
+      toast({ title: "Memanggil Ulang", description: `Nomor antrian ${currentServingTicket.number} dipanggil ulang.` });
+    }
+  };
   
   if (!authLoaded || !currentUser) {
       return <div className="flex items-center justify-center min-h-screen">Memuat...</div>
@@ -367,7 +375,8 @@ export default function StaffPage() {
                           {currentServingTicket.calledAt ? format(currentServingTicket.calledAt, 'HH:mm:ss') : format(currentServingTicket.timestamp, 'HH:mm:ss')}
                         </div>
                         <div className="pt-4 space-y-2">
-                           <Button onClick={() => recallTicket(currentServingTicket.id)} size="lg" variant="secondary" className="w-full">
+                           <Button onClick={handleRecall} size="lg" variant="secondary" className="w-full">
+                            <Volume2 className="mr-2 h-4 w-4"/>
                             Panggil Ulang
                           </Button>
                           <Button onClick={handleSkip} size="lg" variant="outline" className="w-full">
