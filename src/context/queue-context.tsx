@@ -454,15 +454,14 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
 
   // --- Admin Functions ---
   const addStaff = async (userData: any) => {
+    // This function creates the user, but because it's a client-side SDK call,
+    // it will log out the current admin. The calling component handles the UI
+    // feedback and redirects the user back to the login page.
     const { email, password, name, role, counters } = userData;
-    const tempAuth = getAuth(app); // Use the same app instance
-    
     try {
-        // 1. Create the new user. This will log out the admin.
-        const newUserCredential = await createUserWithEmailAndPassword(tempAuth, email, password);
+        const newUserCredential = await createUserWithEmailAndPassword(auth, email, password);
         const newUser = newUserCredential.user;
 
-        // 2. Immediately write the Firestore data for the new user.
         const batch = writeBatch(db);
         const userDocRef = doc(db, 'users', newUser.uid);
         batch.set(userDocRef, { name, email, role });
@@ -473,12 +472,8 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
         }
         
         await batch.commit();
-
-        // 3. Sign out the new user so the admin can log back in.
-        await signOut(tempAuth);
+        await signOut(auth);
         
-        // The component will handle redirecting the admin to the login page.
-
     } catch (error: any) {
         // Re-throw the error to be caught in the component
         console.error("Error in addStaff:", error);
@@ -589,5 +584,3 @@ export const useQueue = () => {
   }
   return context;
 };
-
-    

@@ -249,7 +249,7 @@ const StaffTab = () => {
                 toast({ 
                     variant: "success",
                     title: "Sukses", 
-                    description: "Pengguna baru berhasil ditambahkan. Anda akan logout. Silakan login kembali." 
+                    description: "Pengguna baru berhasil ditambahkan. Anda akan dialihkan ke halaman login." 
                 });
                 setIsAddOpen(false);
 
@@ -295,6 +295,9 @@ const StaffTab = () => {
                     <DialogContent>
                         <DialogHeader>
                             <DialogTitle>Tambah Pengguna Baru</DialogTitle>
+                            <DialogDescription>
+                                Perhatian: Menambahkan pengguna baru akan membuat Anda (admin) logout secara otomatis karena keterbatasan teknis Firebase. Anda perlu login kembali setelahnya.
+                            </DialogDescription>
                         </DialogHeader>
                         <StaffForm onSave={handleSaveStaff} closeDialog={() => setIsAddOpen(false)} />
                     </DialogContent>
@@ -929,5 +932,3 @@ export default function AdminPage() {
     </div>
   );
 }
-
-    
