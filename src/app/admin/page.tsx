@@ -6,7 +6,7 @@ import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis, CartesianGrid, Toolti
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import * as LucideIcons from 'lucide-react';
-import { Users, Briefcase, Ticket, Clock, LogOut, BarChart2, Settings, UserCog, Building, FileText, PlusCircle, Edit, Trash2, Film, ChevronLeft, ChevronRight, Menu, Icon as IconType, Monitor, Calendar as CalendarIcon, Download, Loader2 } from 'lucide-react';
+import { Users, Briefcase, Ticket, Clock, LogOut, BarChart2, Settings, UserCog, Building, FileText, PlusCircle, Edit, Trash2, Film, ChevronLeft, ChevronRight, Menu, Icon as IconType, Monitor, Calendar as CalendarIcon, Download, Loader2, Palette, Text, Volume2 } from 'lucide-react';
 import { format, differenceInMinutes, formatDistanceStrict } from 'date-fns';
 import { id as localeID } from 'date-fns/locale';
 import * as XLSX from 'xlsx';
@@ -15,7 +15,7 @@ import { DateRange } from 'react-day-picker';
 
 import QNextLogo from '@/components/icons/q-next-logo';
 import { useQueue } from '@/context/queue-context';
-import type { Staff, Counter, Service, User, ReportTicket } from '@/context/queue-context';
+import type { Staff, Counter, Service, User, ReportTicket, DisplaySettings } from '@/context/queue-context';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
@@ -31,6 +31,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import Link from 'next/link';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Calendar } from '@/components/ui/calendar';
+import { Textarea } from '@/components/ui/textarea';
 
 const chartData = [
   { name: '09:00', 'Layanan Konsultasi': 12, 'Pengajuan Perizinan': 20, 'Layanan Prioritas': 5 },
@@ -731,57 +732,152 @@ const ServiceTab = () => {
     );
 }
 
-const VideoTab = () => {
-    const { state: { videoUrl }, updateVideoUrl } = useQueue();
-    const [url, setUrl] = React.useState(videoUrl);
+const colorSchemes = {
+    "default": "Skema Biru (Default)",
+    "forest": "Skema Hijau Hutan",
+    "sunset": "Skema Oranye Senja",
+    "modern": "Skema Modern (Hitam Putih)",
+};
+const soundOptions = [
+    { value: 'chime.mp3', label: 'Chime (Default)' },
+    { value: 'ding.mp3', label: 'Ding' },
+    { value: 'bell.mp3', label: 'Bell' },
+];
+
+const DisplayTab = () => {
+    const { state, updateDisplaySettings } = useQueue();
+    const [settings, setSettings] = React.useState<DisplaySettings>({
+        videoUrl: '',
+        footerText: '',
+        colorScheme: 'default',
+        soundUrl: 'chime.mp3'
+    });
     const [isLoading, setIsLoading] = React.useState(false);
     const { toast } = useToast();
 
     React.useEffect(() => {
-        setUrl(videoUrl);
-    }, [videoUrl]);
+        if (state.displaySettings) {
+            setSettings(state.displaySettings);
+        }
+    }, [state.displaySettings]);
 
     const handleSave = async () => {
         setIsLoading(true);
         try {
-            await updateVideoUrl(url);
-            toast({ variant: "success", title: "Sukses", description: "URL Video berhasil diperbarui." });
+            await updateDisplaySettings(settings);
+            toast({ variant: "success", title: "Sukses", description: "Pengaturan tampilan berhasil diperbarui." });
         } catch (error) {
-            toast({ variant: "destructive", title: "Error", description: "Gagal memperbarui URL video." });
+            toast({ variant: "destructive", title: "Error", description: "Gagal memperbarui pengaturan." });
             console.error(error);
         } finally {
             setIsLoading(false);
         }
     };
 
+    const handleSoundPlay = (soundFile: string) => {
+        const audio = new Audio(`https://firebasestorage.googleapis.com/v0/b/bkpm-q.appspot.com/o/${soundFile}?alt=media`);
+        audio.play();
+    }
+
     return (
         <Card>
             <CardHeader>
-                <CardTitle>Manajemen Video Monitor</CardTitle>
+                <CardTitle>Pengaturan Tampilan Monitor</CardTitle>
                 <CardDescription>
-                    Atur video atau playlist YouTube yang akan ditampilkan di layar monitor antrian.
+                    Atur tampilan visual, video, teks, dan suara pada halaman monitor antrian.
                 </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-8">
+                 <div className="space-y-2">
+                    <Label className="flex items-center gap-2"><Palette/> Skema Warna</Label>
+                    <RadioGroup 
+                        value={settings.colorScheme} 
+                        onValueChange={(value) => setSettings(prev => ({...prev, colorScheme: value}))}
+                        className="grid grid-cols-2 md:grid-cols-4 gap-4"
+                    >
+                        {Object.entries(colorSchemes).map(([key, label]) => (
+                             <Label key={key} htmlFor={`color-${key}`} className={cn(
+                                 "border rounded-lg p-4 cursor-pointer transition-all",
+                                 settings.colorScheme === key ? "ring-2 ring-primary" : "ring-1 ring-border"
+                             )}>
+                                <RadioGroupItem value={key} id={`color-${key}`} className="sr-only"/>
+                                <div className="flex items-center gap-2 mb-2">
+                                    <div className={`w-5 h-5 rounded-full scheme-bg-${key}`}></div>
+                                    <span className="font-semibold">{label}</span>
+                                </div>
+                                <div className={`h-8 w-full rounded-md scheme-bg-${key} flex items-center justify-center`}>
+                                    <p className={`text-xs font-bold scheme-text-${key}`}>A-001</p>
+                                </div>
+                             </Label>
+                        ))}
+                    </RadioGroup>
+                </div>
                 <div className="space-y-2">
-                    <Label htmlFor="video-url">URL Playlist YouTube</Label>
+                    <Label htmlFor="video-url" className="flex items-center gap-2"><Film /> URL Playlist YouTube</Label>
                     <Input 
                         id="video-url" 
-                        value={url} 
-                        onChange={(e) => setUrl(e.target.value)}
+                        value={settings.videoUrl} 
+                        onChange={(e) => setSettings(prev => ({...prev, videoUrl: e.target.value }))}
                         placeholder="https://www.youtube.com/embed/videoseries?list=..."
                     />
                     <p className="text-sm text-muted-foreground">
                         Pastikan Anda menggunakan URL "embed" dari YouTube. Contoh: <strong>https://www.youtube.com/embed/videoseries?list=PL2_3w_50q_p_4i_t_aA-i1l_n5s-ZqGcB</strong>
                     </p>
                 </div>
+                 <div className="space-y-2">
+                    <Label htmlFor="footer-text" className="flex items-center gap-2"><Text /> Teks Berjalan (Footer)</Label>
+                    <Textarea 
+                        id="footer-text"
+                        value={settings.footerText}
+                        onChange={(e) => setSettings(prev => ({...prev, footerText: e.target.value }))}
+                        placeholder="Selamat datang di layanan kami. Kepuasan anda adalah prioritas kami."
+                        rows={3}
+                    />
+                    <p className="text-sm text-muted-foreground">
+                        Gunakan tanda `---` (tiga tanda hubung) untuk memisahkan beberapa pesan.
+                    </p>
+                </div>
+                <div className="space-y-2">
+                    <Label htmlFor="sound-url" className="flex items-center gap-2"><Volume2 /> Suara Panggilan</Label>
+                     <div className="flex items-center gap-2">
+                        <Select 
+                            value={settings.soundUrl}
+                            onValueChange={(value) => setSettings(prev => ({...prev, soundUrl: value }))}
+                        >
+                            <SelectTrigger id="sound-url" className="flex-grow">
+                                <SelectValue placeholder="Pilih suara" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {soundOptions.map(opt => (
+                                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                        <Button variant="outline" size="icon" onClick={() => handleSoundPlay(settings.soundUrl)}>
+                            <Volume2/>
+                        </Button>
+                    </div>
+                     <p className="text-sm text-muted-foreground">Pilih suara notifikasi yang akan diputar saat nomor antrian dipanggil.</p>
+                </div>
                 <Button onClick={handleSave} disabled={isLoading}>
                     {isLoading ? 'Menyimpan...' : 'Simpan Perubahan'}
                 </Button>
             </CardContent>
+            {/* Style for color scheme previews */}
+            <style jsx>{`
+                .scheme-bg-default { background-color: #003049; }
+                .scheme-text-default { color: #E6EEF2; }
+                .scheme-bg-forest { background-color: #2F4F4F; }
+                .scheme-text-forest { color: #F0FFF0; }
+                .scheme-bg-sunset { background-color: #E67E22; }
+                .scheme-text-sunset { color: #FFF8E1; }
+                .scheme-bg-modern { background-color: #111827; }
+                .scheme-text-modern { color: #F9FAFB; }
+            `}</style>
         </Card>
     );
 };
+
 
 
 const ReportTab = () => {
@@ -995,7 +1091,7 @@ const navItems = [
     { id: 'staff', label: 'Pengguna', icon: UserCog, action: (setActiveTab: Function) => setActiveTab('staff') },
     { id: 'counters', label: 'Loket', icon: Building, action: (setActiveTab: Function) => setActiveTab('counters') },
     { id: 'services', label: 'Layanan', icon: Settings, action: (setActiveTab: Function) => setActiveTab('services') },
-    { id: 'video', label: 'Video', icon: Film, action: (setActiveTab: Function) => setActiveTab('video') },
+    { id: 'display', label: 'Tampilan', icon: Palette, action: (setActiveTab: Function) => setActiveTab('display') },
     { id: 'monitor', label: 'Monitor', icon: Monitor, action: () => window.open('/monitor', '_blank') },
     { id: 'reports', label: 'Laporan', icon: FileText, action: (setActiveTab: Function) => setActiveTab('reports') },
 ]
@@ -1035,7 +1131,7 @@ export default function AdminPage() {
         case 'staff': return <StaffTab />;
         case 'counters': return <CounterTab />;
         case 'services': return <ServiceTab />;
-        case 'video': return <VideoTab />;
+        case 'display': return <DisplayTab />;
         case 'reports': return <ReportTab />;
         default: return <DashboardTab />;
     }

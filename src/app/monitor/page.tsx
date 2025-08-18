@@ -8,7 +8,8 @@ import * as LucideIcons from 'lucide-react';
 import { Volume2, Ticket as TicketIcon, Bell } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import type { Ticket } from '@/context/queue-context';
+import type { Ticket, DisplaySettings } from '@/context/queue-context';
+import { cn } from '@/lib/utils';
 
 const useSpeech = () => {
   const [isReady, setIsReady] = React.useState(false);
@@ -61,7 +62,7 @@ const getIcon = (iconName: string): React.ComponentType<LucideIcons.LucideProps>
 
 export default function MonitorPage() {
   const { state, recallTicket } = useQueue();
-  const { nowServing, tickets, videoUrl } = state;
+  const { nowServing, tickets, displaySettings } = state;
   const { speak } = useSpeech();
   const lastCalledTicketIdRef = useRef<string | null>(null);
   const lastRecallTimestampRef = useRef<number | null>(null);
@@ -128,9 +129,9 @@ export default function MonitorPage() {
   const nextInQueue: Ticket[] = waitingTickets.slice(0, 5);
 
   const getFullVideoUrl = () => {
-    if (!videoUrl) return '';
+    if (!displaySettings?.videoUrl) return '';
     try {
-      const url = new URL(videoUrl);
+      const url = new URL(displaySettings.videoUrl);
       const params = new URLSearchParams(url.search);
       params.set('autoplay', '1');
       params.set('mute', '1');
@@ -165,15 +166,17 @@ export default function MonitorPage() {
     }
   }
 
+  const audioUrl = `https://firebasestorage.googleapis.com/v0/b/bkpm-q.appspot.com/o/${displaySettings.soundUrl || 'chime.mp3'}?alt=media`;
+
   return (
-    <div className="flex flex-col h-screen bg-primary text-primary-foreground overflow-hidden font-sans">
-       <audio ref={audioRef} src="https://firebasestorage.googleapis.com/v0/b/bkpm-q.appspot.com/o/chime.mp3?alt=media&token=80b953a3-a75d-45cb-a035-518335919445" preload="auto"></audio>
-      <header className="px-8 py-3 flex justify-between items-center bg-black/20 shadow-lg">
+    <div className={cn("flex flex-col h-screen overflow-hidden font-sans", `theme-${displaySettings.colorScheme}`)}>
+       <audio ref={audioRef} src={audioUrl} preload="auto"></audio>
+      <header className="px-8 py-3 flex justify-between items-center bg-monitor-header shadow-lg text-monitor-header-foreground">
         <Link href="/" className="flex items-center gap-4">
           <QNextLogo className="h-12 w-12" />
           <div>
             <h1 className="text-4xl font-bold tracking-tight">Q-NEXT</h1>
-            <p className="text-lg text-primary-foreground/80">Sistem Antrian Pelayanan Publik</p>
+            <p className="text-lg text-monitor-header-foreground/80">Sistem Antrian Pelayanan Publik</p>
           </div>
         </Link>
         <div className="text-right">
@@ -181,9 +184,9 @@ export default function MonitorPage() {
         </div>
       </header>
 
-      <main className="flex-1 grid grid-cols-12 grid-rows-6 gap-6 p-6">
+      <main className="flex-1 grid grid-cols-12 grid-rows-6 gap-6 p-6 bg-monitor-background">
          <div className="col-span-8 row-span-4 rounded-lg overflow-hidden shadow-2xl bg-black flex items-center justify-center">
-            {videoUrl ? (
+            {displaySettings?.videoUrl ? (
                 <iframe
                     className="w-full h-full"
                     src={getFullVideoUrl()}
@@ -197,8 +200,12 @@ export default function MonitorPage() {
             )}
         </div>
 
-        <Card className={`col-span-4 row-span-6 bg-background text-foreground flex flex-col shadow-2xl transition-all duration-300 ${isRecalling ? 'ring-4 ring-accent' : ''}`}>
-          <CardHeader className="text-center bg-primary text-primary-foreground py-4">
+        <Card className={cn(
+          "col-span-4 row-span-6 flex flex-col shadow-2xl transition-all duration-300",
+          "bg-monitor-card text-monitor-card-foreground",
+           isRecalling ? 'ring-4 ring-monitor-accent' : ''
+        )}>
+          <CardHeader className="text-center py-4 bg-monitor-primary text-monitor-primary-foreground">
             <CardTitle className="text-4xl font-bold tracking-wider flex items-center justify-center gap-3">
               <Bell className="animate-swing"/> SEDANG DIPANGGIL
             </CardTitle>
@@ -206,12 +213,15 @@ export default function MonitorPage() {
           <CardContent className="flex-1 flex flex-col justify-center items-center w-full p-4">
             {nowServing ? (
                 <>
-                    <p className={`text-[9rem] font-extrabold leading-none tracking-tight text-primary transition-all duration-300 ${isRecalling ? 'scale-110' : ''}`}>
+                    <p className={cn(
+                      "text-[9rem] font-extrabold leading-none tracking-tight text-monitor-primary transition-all duration-300",
+                      isRecalling ? 'scale-110' : ''
+                    )}>
                         {nowServing.ticket.number}
                     </p>
                     <div className="mt-6 text-center w-full">
-                        <p className="text-4xl font-medium text-muted-foreground">MENUJU</p>
-                        <p className="text-8xl font-bold text-primary mt-2 bg-primary/10 py-2 rounded-lg">
+                        <p className="text-4xl font-medium text-monitor-muted-foreground">MENUJU</p>
+                        <p className="text-8xl font-bold text-monitor-primary mt-2 bg-monitor-primary/10 py-2 rounded-lg">
                             LOKET {nowServing.counter}
                         </p>
                     </div>
@@ -220,7 +230,7 @@ export default function MonitorPage() {
                      </Button>
                 </>
             ) : (
-                <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
+                <div className="flex flex-col items-center justify-center h-full text-monitor-muted-foreground">
                     <TicketIcon className="w-32 h-32 opacity-20"/>
                     <p className="mt-4 text-2xl font-medium">Menunggu Panggilan</p>
                 </div>
@@ -228,14 +238,14 @@ export default function MonitorPage() {
           </CardContent>
         </Card>
         
-        <div className="col-span-8 row-span-2 bg-card/80 rounded-lg p-4 shadow-xl flex flex-col">
-            <h2 className="text-2xl font-bold text-primary-foreground/90 mb-3 px-2">ANTRIAN BERIKUTNYA</h2>
+        <div className="col-span-8 row-span-2 bg-monitor-card/80 rounded-lg p-4 shadow-xl flex flex-col text-monitor-card-foreground">
+            <h2 className="text-2xl font-bold mb-3 px-2">ANTRIAN BERIKUTNYA</h2>
             <div className="grid grid-cols-5 gap-4 flex-1">
                 {nextInQueue.length > 0 ? (
                     nextInQueue.map(ticket => {
                       const Icon = getIcon(ticket.service.icon);
                       return (
-                        <div key={ticket.number} className="bg-background/20 rounded-lg flex flex-col items-center justify-center p-3 text-center">
+                        <div key={ticket.number} className="bg-monitor-background/20 rounded-lg flex flex-col items-center justify-center p-3 text-center">
                            <p className="text-4xl font-bold tracking-wider">{ticket.number}</p>
                            <p className="text-sm opacity-80 mt-1 flex items-center gap-2">
                             <Icon className="h-5 w-5" />
@@ -245,12 +255,12 @@ export default function MonitorPage() {
                       )
                     })
                 ) : (
-                    <div className="col-span-5 flex items-center justify-center text-primary-foreground/60 text-xl">
+                    <div className="col-span-5 flex items-center justify-center text-monitor-muted-foreground text-xl">
                         <p>Tidak ada antrian berikutnya.</p>
                     </div>
                 )}
                  {Array.from({ length: Math.max(0, 5 - nextInQueue.length) }).map((_, i) => (
-                    <div key={`placeholder-${i}`} className="bg-background/10 rounded-lg flex items-center justify-center p-3 text-2xl font-bold text-primary-foreground/30">
+                    <div key={`placeholder-${i}`} className="bg-monitor-background/10 rounded-lg flex items-center justify-center p-3 text-2xl font-bold opacity-30">
                         -
                     </div>
                 ))}
@@ -259,10 +269,10 @@ export default function MonitorPage() {
 
       </main>
 
-      <footer className="bg-black/20 p-2 shadow-inner-top">
+      <footer className="bg-monitor-header text-monitor-header-foreground p-2 shadow-inner-top">
         <div className="overflow-hidden">
             <p className="text-lg font-medium whitespace-nowrap animate-marquee">
-                Selamat datang di layanan Front Office kami. Kepuasan anda adalah prioritas kami. --- Mohon siapkan dokumen yang diperlukan sebelum menuju ke loket. --- Pastikan Anda mendengar panggilan nomor antrian Anda.
+                {displaySettings.footerText || 'Selamat datang di layanan Front Office kami. Kepuasan anda adalah prioritas kami.'}
             </p>
         </div>
       </footer>
@@ -286,6 +296,53 @@ export default function MonitorPage() {
         .animate-swing {
             animation: swing 1.5s ease-in-out;
         }
+
+        /* Color Schemes */
+        .theme-default {
+            --monitor-background: hsl(203 33% 95%);
+            --monitor-header: hsl(0 0% 0% / 0.2);
+            --monitor-header-foreground: hsl(203 33% 95%);
+            --monitor-card: hsl(203 33% 100%);
+            --monitor-card-foreground: hsl(203 100% 9%);
+            --monitor-primary: hsl(203 100% 14%);
+            --monitor-primary-foreground: hsl(0 0% 98%);
+            --monitor-accent: hsl(0 68% 50%);
+            --monitor-muted-foreground: hsl(203 33% 40%);
+        }
+        .theme-forest {
+            --monitor-background: hsl(120 20% 95%);
+            --monitor-header: hsl(120 60% 15% / 0.8);
+            --monitor-header-foreground: hsl(120 20% 98%);
+            --monitor-card: hsl(120 5% 100%);
+            --monitor-card-foreground: hsl(120 60% 15%);
+            --monitor-primary: hsl(120 60% 25%);
+            --monitor-primary-foreground: hsl(0 0% 98%);
+            --monitor-accent: hsl(100 50% 45%);
+            --monitor-muted-foreground: hsl(120 20% 30%);
+        }
+        .theme-sunset {
+            --monitor-background: hsl(30 100% 97%);
+            --monitor-header: hsl(25 80% 35% / 0.8);
+            --monitor-header-foreground: hsl(30 100% 98%);
+            --monitor-card: hsl(30 20% 100%);
+            --monitor-card-foreground: hsl(20 80% 25%);
+            --monitor-primary: hsl(25 85% 40%);
+            --monitor-primary-foreground: hsl(0 0% 98%);
+            --monitor-accent: hsl(0 90% 60%);
+            --monitor-muted-foreground: hsl(30 30% 40%);
+        }
+        .theme-modern {
+            --monitor-background: hsl(220 13% 18%);
+            --monitor-header: hsl(220 13% 12%);
+            --monitor-header-foreground: hsl(210 40% 98%);
+            --monitor-card: hsl(220 13% 22%);
+            --monitor-card-foreground: hsl(210 40% 98%);
+            --monitor-primary: hsl(210 40% 98%);
+            --monitor-primary-foreground: hsl(220 13% 12%);
+            --monitor-accent: hsl(173 80% 40%);
+            --monitor-muted-foreground: hsl(215 20% 65%);
+        }
+
       `}</style>
     </div>
   );

@@ -60,6 +60,13 @@ export interface ReportTicket {
   counter?: number;
 }
 
+export interface DisplaySettings {
+    videoUrl: string;
+    footerText: string;
+    colorScheme: string;
+    soundUrl: string;
+}
+
 
 export interface ServingInfo {
   ticket: Ticket;
@@ -127,7 +134,7 @@ interface QueueState {
   users: User[];
   currentUser: User | null;
   authLoaded: boolean;
-  videoUrl: string;
+  displaySettings: DisplaySettings;
 }
 
 interface QueueContextType {
@@ -148,7 +155,7 @@ interface QueueContextType {
   addService: (service: Omit<Service, 'id'> & { id: string }) => Promise<void>;
   updateService: (service: Service) => Promise<void>;
   deleteService: (serviceId: string) => Promise<void>;
-  updateVideoUrl: (url: string) => Promise<void>;
+  updateDisplaySettings: (settings: DisplaySettings) => Promise<void>;
   getReportData: (startDate: Date, endDate: Date) => Promise<ReportTicket[]>;
 }
 
@@ -174,7 +181,12 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
     users: [],
     currentUser: null,
     authLoaded: false,
-    videoUrl: 'https://www.youtube.com/embed/videoseries?list=PL2_3w_50q_p_4i_t_aA-i1l_n5s-ZqGcB'
+    displaySettings: {
+      videoUrl: 'https://www.youtube.com/embed/videoseries?list=PL2_3w_50q_p_4i_t_aA-i1l_n5s-ZqGcB',
+      footerText: 'Selamat datang di layanan Front Office kami. Kepuasan anda adalah prioritas kami. --- Mohon siapkan dokumen yang diperlukan sebelum menuju ke loket.',
+      colorScheme: 'default',
+      soundUrl: 'chime.mp3'
+    }
   });
   const { toast } = useToast();
   const auth = getAuth(app);
@@ -295,9 +307,7 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
     const unsubscribe = onSnapshot(settingsRef, (doc) => {
         if (doc.exists()) {
             const data = doc.data();
-            if (data.videoUrl) {
-                setState(prevState => ({...prevState, videoUrl: data.videoUrl }));
-            }
+            setState(prevState => ({...prevState, displaySettings: { ...prevState.displaySettings, ...data } }));
         }
     }, (error) => {
         console.error("Error fetching settings:", error);
@@ -625,9 +635,9 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
     }
   }
   
-  const updateVideoUrl = async (url: string) => {
+  const updateDisplaySettings = async (settings: DisplaySettings) => {
     const settingsRef = doc(db, 'settings', 'display');
-    await setDoc(settingsRef, { videoUrl: url }, { merge: true });
+    await setDoc(settingsRef, settings, { merge: true });
   }
 
   const getReportData = async (startDate: Date, endDate: Date): Promise<ReportTicket[]> => {
@@ -668,7 +678,7 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
 
 
   return (
-    <QueueContext.Provider value={{ state, loginUser, logoutUser, addTicket, callNextTicket, completeTicket, skipTicket, recallTicket, addStaff, updateStaff, deleteStaff, addCounter, updateCounter, deleteCounter, addService, updateService, deleteService, updateVideoUrl, getReportData }}>
+    <QueueContext.Provider value={{ state, loginUser, logoutUser, addTicket, callNextTicket, completeTicket, skipTicket, recallTicket, addStaff, updateStaff, deleteStaff, addCounter, updateCounter, deleteCounter, addService, updateService, deleteService, updateDisplaySettings, getReportData }}>
       {children}
     </QueueContext.Provider>
   );
@@ -681,4 +691,3 @@ export const useQueue = () => {
   }
   return context;
 };
- 
