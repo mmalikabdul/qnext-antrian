@@ -210,20 +210,21 @@ const StaffTab = () => {
             if (data.uid) { // Editing
                 const staffData = { id: data.uid, name: data.name, counters: data.counters };
                 await updateStaff(staffData);
-                toast({ title: "Sukses", description: "Data petugas berhasil diperbarui." });
+                toast({ variant: "success", title: "Sukses", description: "Data petugas berhasil diperbarui." });
                 setEditingStaff(null);
             } else { // Adding
                 if (!currentUser) throw new Error("Admin user not found.");
 
                 const isDuplicateName = staff.some(s => s.name.toLowerCase() === data.name.toLowerCase());
                 if (isDuplicateName) {
-                    toast({ title: "Gagal", description: "Nama petugas sudah ada. Silakan gunakan nama lain.", variant: "destructive" });
+                    toast({ variant: "destructive", title: "Gagal", description: "Nama petugas sudah ada. Silakan gunakan nama lain." });
                     return;
                 }
                 
                 await addStaff(data);
                 
                 toast({ 
+                    variant: "success",
                     title: "Sukses", 
                     description: "Petugas baru berhasil ditambahkan. Anda akan logout. Silakan login kembali." 
                 });
@@ -240,16 +241,16 @@ const StaffTab = () => {
             const message = e.code === 'auth/email-already-in-use' 
                 ? "Email sudah digunakan oleh akun lain."
                 : `Gagal menyimpan data petugas: ${e.message}`;
-            toast({ title: "Error", description: message, variant: "destructive" });
+            toast({ variant: "destructive", title: "Error", description: message });
         }
     }
 
     const handleDeleteStaff = async (id: string) => {
         try {
             await deleteStaff(id);
-            toast({ title: "Sukses", description: "Petugas berhasil dihapus." });
-        } catch(e) {
-            toast({ title: "Error", description: "Gagal menghapus petugas.", variant: "destructive" });
+            toast({ variant: "success", title: "Sukses", description: "Petugas berhasil dihapus." });
+        } catch(e: any) {
+            toast({ variant: "destructive", title: "Error", description: `Gagal menghapus petugas. ${e.message}` });
         }
     }
 
@@ -379,29 +380,29 @@ const CounterTab = () => {
         try {
             if ('docId' in data) {
                 await updateCounter(data);
-                toast({ title: "Sukses", description: "Data loket berhasil diperbarui." });
+                toast({ variant: "success", title: "Sukses", description: "Data loket berhasil diperbarui." });
             } else {
                 const isDuplicate = counters.some(c => c.name.toLowerCase() === data.name.toLowerCase());
                 if (isDuplicate) {
-                    toast({ title: "Error", description: "Nama loket sudah ada.", variant: "destructive" });
+                    toast({ variant: "destructive", title: "Error", description: "Nama loket sudah ada." });
                     return;
                 }
                 await addCounter(data);
-                toast({ title: "Sukses", description: "Loket baru berhasil ditambahkan." });
+                toast({ variant: "success", title: "Sukses", description: "Loket baru berhasil ditambahkan." });
             }
             setIsAddOpen(false);
             setEditingCounter(null);
         } catch(e) {
-            toast({ title: "Error", description: "Gagal menyimpan data loket.", variant: "destructive" });
+            toast({ variant: "destructive", title: "Error", description: "Gagal menyimpan data loket." });
         }
     }
 
     const handleDeleteCounter = async (docId: string) => {
         try {
             await deleteCounter(docId);
-            toast({ title: "Sukses", description: "Loket berhasil dihapus." });
+            toast({ variant: "success", title: "Sukses", description: "Loket berhasil dihapus." });
         } catch(e) {
-            toast({ title: "Error", description: "Gagal menghapus loket.", variant: "destructive" });
+            toast({ variant: "destructive", title: "Error", description: "Gagal menghapus loket." });
         }
     }
 
@@ -583,16 +584,16 @@ const ServiceTab = () => {
         try {
              if (editingService) {
                 await updateService(data);
-                toast({ title: "Sukses", description: "Layanan berhasil diperbarui." });
+                toast({ variant: "success", title: "Sukses", description: "Layanan berhasil diperbarui." });
             } else {
                 await addService(data);
-                toast({ title: "Sukses", description: "Layanan baru berhasil ditambahkan." });
+                toast({ variant: "success", title: "Sukses", description: "Layanan baru berhasil ditambahkan." });
             }
             setEditingService(null);
             setIsAddOpen(false); // Close dialog on success
         } catch(e) {
             console.error(e);
-            toast({ title: "Error", description: "Gagal menyimpan layanan. Pastikan ID unik.", variant: "destructive" });
+            toast({ variant: "destructive", title: "Error", description: "Gagal menyimpan layanan. Pastikan ID unik." });
         }
     }
 
@@ -601,7 +602,7 @@ const ServiceTab = () => {
             await deleteService(id);
             // Toast is handled inside context now
         } catch(e) {
-             toast({ title: "Error", description: "Gagal menghapus layanan.", variant: "destructive" });
+             toast({ variant: "destructive", title: "Error", description: "Gagal menghapus layanan." });
         }
     }
 
@@ -697,9 +698,9 @@ const VideoTab = () => {
         setIsLoading(true);
         try {
             await updateVideoUrl(url);
-            toast({ title: "Sukses", description: "URL Video berhasil diperbarui." });
+            toast({ variant: "success", title: "Sukses", description: "URL Video berhasil diperbarui." });
         } catch (error) {
-            toast({ title: "Error", description: "Gagal memperbarui URL video.", variant: "destructive" });
+            toast({ variant: "destructive", title: "Error", description: "Gagal memperbarui URL video." });
             console.error(error);
         } finally {
             setIsLoading(false);
@@ -774,7 +775,7 @@ export default function AdminPage() {
         router.push('/login');
     }
      if(state.authLoaded && state.currentUser?.role !== 'admin') {
-        toast({ title: "Akses Ditolak", description: "Hanya admin yang dapat mengakses halaman ini.", variant: "destructive" });
+        toast({ variant: "destructive", title: "Akses Ditolak", description: "Hanya admin yang dapat mengakses halaman ini." });
         router.push('/login');
     }
   }, [state.currentUser, state.authLoaded, router, toast]);
@@ -786,7 +787,7 @@ export default function AdminPage() {
         toast({ title: "Logout Berhasil", description: "Anda telah keluar dari sesi." });
         router.push('/login');
     } catch (error) {
-        toast({ title: "Error", description: "Gagal melakukan logout.", variant: "destructive" });
+        toast({ variant: "destructive", title: "Error", description: "Gagal melakukan logout." });
     }
   };
 

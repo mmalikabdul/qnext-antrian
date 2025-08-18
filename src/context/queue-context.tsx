@@ -371,13 +371,13 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
         });
 
         if (newTicketData) {
-             toast({ title: "Sukses", description: `Tiket ${newTicketData.number} berhasil dibuat.` });
+             toast({ variant: "success", title: "Sukses", description: `Tiket ${newTicketData.number} berhasil dibuat.` });
         }
         return newTicketData;
 
     } catch (error) {
         console.error("Error adding ticket: ", error);
-        toast({ title: 'Error', description: 'Gagal menambahkan tiket.', variant: 'destructive'});
+        toast({ variant: 'destructive', title: 'Error', description: 'Gagal menambahkan tiket.'});
         return null;
     }
   };
@@ -387,7 +387,7 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
       const waitingTickets = state.tickets.filter(t => t.serviceId === serviceId && t.status === 'waiting');
       
       if (waitingTickets.length === 0) {
-        toast({ title: 'Info', description: 'Tidak ada antrian untuk layanan ini.'});
+        toast({ variant: 'warning', title: 'Info', description: 'Tidak ada antrian untuk layanan ini.'});
         return;
       }
       
@@ -409,7 +409,7 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
 
     } catch (error) {
         console.error("Error calling next ticket: ", error);
-        toast({ title: 'Error', description: 'Gagal memanggil tiket berikutnya.', variant: 'destructive'});
+        toast({ variant: 'destructive', title: 'Error', description: 'Gagal memanggil tiket berikutnya.'});
     }
   };
 
@@ -425,11 +425,11 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
     try {
         await updateDoc(doc(db, 'tickets', ticketId), { status: 'done' });
         await clearServingAndRecall();
-        toast({ title: "Layanan Selesai", description: "Antrian telah selesai dilayani."});
+        toast({ variant: "success", title: "Layanan Selesai", description: "Antrian telah selesai dilayani."});
 
     } catch (error) {
         console.error("Error completing ticket: ", error);
-        toast({ title: 'Error', description: 'Gagal menyelesaikan tiket.', variant: 'destructive'});
+        toast({ variant: 'destructive', title: 'Error', description: 'Gagal menyelesaikan tiket.'});
     }
   };
 
@@ -437,11 +437,11 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
     try {
         await updateDoc(doc(db, 'tickets', ticketId), { status: 'skipped' });
         await clearServingAndRecall();
-        toast({ title: "Antrian Dilewati", description: "Antrian telah ditandai sebagai dilewati."});
+        toast({ variant: "warning", title: "Antrian Dilewati", description: "Antrian telah ditandai sebagai dilewati."});
 
     } catch (error) {
         console.error("Error skipping ticket: ", error);
-        toast({ title: 'Error', description: 'Gagal melewati tiket.', variant: 'destructive'});
+        toast({ variant: 'destructive', title: 'Error', description: 'Gagal melewati tiket.'});
     }
   };
   
@@ -554,10 +554,10 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
         }
 
         await batch.commit();
-        toast({ title: "Sukses", description: "Layanan berhasil dihapus." });
+        toast({ variant: "success", title: "Sukses", description: "Layanan berhasil dihapus." });
     } catch (e) {
         console.error("Failed to delete service and its counters", e);
-        toast({ title: "Error", description: "Gagal menghapus layanan.", variant: "destructive" });
+        toast({ variant: "destructive", title: "Error", description: "Gagal menghapus layanan." });
         throw e;
     }
   }

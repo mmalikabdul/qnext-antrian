@@ -71,6 +71,7 @@ export default function LoginPage() {
       loginUser({ uid: user.uid, email: user.email!, role: userRole, ...staffData });
 
       toast({
+        variant: "success",
         title: 'Login Berhasil!',
         description: `Selamat datang kembali. Anda masuk sebagai ${userRole}.`,
       });

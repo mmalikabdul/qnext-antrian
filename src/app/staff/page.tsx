@@ -75,17 +75,17 @@ export default function StaffPage() {
         toast({ title: "Logout Berhasil", description: "Anda telah keluar dari sesi." });
         router.push('/login');
     } catch (error) {
-        toast({ title: "Error", description: "Gagal melakukan logout.", variant: "destructive" });
+        toast({ variant: "destructive", title: "Error", description: "Gagal melakukan logout." });
     }
   };
 
   const handleCallNext = async (serviceId: string) => {
     if (!activeCounterId) {
-        toast({ title: "Error", description: "Pilih loket aktif terlebih dahulu.", variant: 'destructive'});
+        toast({ variant: "destructive", title: "Error", description: "Pilih loket aktif terlebih dahulu."});
         return;
     }
     if (currentServingTicket) {
-      toast({ title: "Perhatian", description: "Selesaikan tiket yang sedang dilayani terlebih dahulu.", variant: 'destructive'});
+      toast({ variant: "warning", title: "Perhatian", description: "Selesaikan tiket yang sedang dilayani terlebih dahulu."});
       return;
     }
     await callNextTicket(serviceId, activeCounterId);
