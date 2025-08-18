@@ -454,9 +454,9 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
 
   // --- Admin Functions ---
   const addStaff = async (userData: any) => {
-    // This function creates the user, but because it's a client-side SDK call,
-    // it will log out the current admin. The calling component handles the UI
-    // feedback and redirects the user back to the login page.
+    // This function creates the user. The client-side SDK call will sign in the
+    // new user and sign out the current admin. The calling component handles the UI
+    // feedback for this.
     const { email, password, name, role, counters } = userData;
     try {
         const newUserCredential = await createUserWithEmailAndPassword(auth, email, password);
@@ -472,7 +472,6 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
         }
         
         await batch.commit();
-        await signOut(auth);
         
     } catch (error: any) {
         // Re-throw the error to be caught in the component

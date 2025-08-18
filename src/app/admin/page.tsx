@@ -222,7 +222,6 @@ const StaffTab = () => {
     const [showSuccessAlert, setShowSuccessAlert] = React.useState(false);
     const { toast } = useToast();
     const router = useRouter();
-    const auth = getAuth(app);
     
     const combinedUserData = users.map(u => {
         const staffData = staff.find(s => s.id === u.uid);
@@ -237,8 +236,6 @@ const StaffTab = () => {
                 toast({ variant: "success", title: "Sukses", description: "Data pengguna berhasil diperbarui." });
                 setEditingStaff(null);
             } else { // Adding
-                if (!currentUser) throw new Error("Admin user not found.");
-
                 const isDuplicateName = users.some(u => u.name?.toLowerCase() === data.name.toLowerCase());
                 if (isDuplicateName) {
                     toast({ variant: "destructive", title: "Gagal", description: "Nama pengguna sudah ada. Silakan gunakan nama lain." });
@@ -247,7 +244,7 @@ const StaffTab = () => {
                 
                 await addStaff(data);
                 setIsAddOpen(false);
-                setShowSuccessAlert(true);
+                setShowSuccessAlert(true); // Show success alert instead of toast
             }
         } catch(e: any) {
             console.error("Failed to save staff:", e);
@@ -258,10 +255,10 @@ const StaffTab = () => {
         }
     }
     
-    const handleSuccessAlertClose = async () => {
+    const handleSuccessAlertClose = () => {
         setShowSuccessAlert(false);
-        await auth.signOut();
-        logoutUser();
+        // The context handles the sign out, here we just redirect
+        logoutUser(); // Clear user from local state
         router.push('/login');
     }
 
@@ -294,7 +291,7 @@ const StaffTab = () => {
                         <DialogHeader>
                             <DialogTitle>Tambah Pengguna Baru</DialogTitle>
                             <DialogDescription>
-                                Perhatian: Menambahkan pengguna baru akan membuat Anda (admin) logout secara otomatis karena keterbatasan teknis Firebase. Anda perlu login kembali setelahnya.
+                                Perhatian: Menambahkan pengguna baru akan membuat sesi admin Anda saat ini berakhir. Anda perlu login kembali setelahnya.
                             </DialogDescription>
                         </DialogHeader>
                         <StaffForm onSave={handleSaveStaff} closeDialog={() => setIsAddOpen(false)} />
@@ -359,7 +356,7 @@ const StaffTab = () => {
                 <AlertDialogHeader>
                     <AlertDialogTitle>Pengguna Baru Berhasil Dibuat</AlertDialogTitle>
                     <AlertDialogDescription>
-                        Anda akan otomatis logout dari sesi admin. Silakan login kembali untuk melanjutkan.
+                        Sesi admin Anda saat ini telah berakhir. Silakan login kembali untuk melanjutkan.
                     </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
@@ -687,7 +684,7 @@ const ServiceTab = () => {
                         </TableRow>
                     </TableHeader>
                     <TableBody>
-                        {services.map(s => {
+                        {services && services.map(s => {
                              const Icon = getIcon(s.icon);
                              return (
                                 <TableRow key={s.id}>
@@ -805,7 +802,6 @@ const navItems = [
 
 export default function AdminPage() {
   const router = useRouter();
-  const auth = getAuth(app);
   const { toast } = useToast();
   const { logoutUser, state } = useQueue();
   const [activeTab, setActiveTab] = React.useState('dashboard');
@@ -825,6 +821,7 @@ export default function AdminPage() {
 
   const handleLogout = async () => {
     try {
+        const auth = getAuth(app);
         await auth.signOut();
         logoutUser();
         toast({ title: "Logout Berhasil", description: "Anda telah keluar dari sesi." });
