@@ -61,7 +61,7 @@ const getIcon = (iconName: string): React.ComponentType<LucideIcons.LucideProps>
 
 
 export default function MonitorPage() {
-  const { state, recallTicket } = useQueue();
+  const { state } = useQueue();
   const { nowServing, tickets, displaySettings } = state;
   const { speak } = useSpeech();
   const lastCalledTicketIdRef = useRef<string | null>(null);
@@ -225,9 +225,6 @@ export default function MonitorPage() {
                             LOKET {nowServing.counter}
                         </p>
                     </div>
-                     <Button onClick={() => nowServing && recallTicket(nowServing.ticket.id)} variant="secondary" size="lg" className="mt-auto w-full text-lg py-6" disabled={!nowServing}>
-                        <Volume2 className="mr-2 h-6 w-6"/> Panggil Ulang
-                     </Button>
                 </>
             ) : (
                 <div className="flex flex-col items-center justify-center h-full text-monitor-muted-foreground">
