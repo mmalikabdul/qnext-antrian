@@ -19,12 +19,16 @@ import {
   Clock,
   Building,
   SkipForward,
+  Ticket,
+  ThumbsUp,
+  XCircle,
 } from 'lucide-react';
 import QNextLogo from '@/components/icons/q-next-logo';
 import { useToast } from '@/hooks/use-toast';
 import { getAuth } from 'firebase/auth';
 import { app } from '@/lib/firebase';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { formatDistanceStrict, differenceInSeconds } from 'date-fns';
 
 const getIcon = (iconName: string): React.ComponentType<LucideIcons.LucideProps> => {
     // @ts-ignore
@@ -49,7 +53,7 @@ export default function StaffPage() {
         setActiveCounterId(currentUser.counters[0]);
     }
   }, [currentUser, authLoaded, router]);
-
+  
   const staffCounters = React.useMemo(() => {
     return counters.filter(c => currentUser?.counters?.includes(c.id));
   }, [counters, currentUser]);
@@ -67,6 +71,40 @@ export default function StaffPage() {
     ).length;
     return acc;
   }, {} as Record<string, number>);
+
+  const staffPerformance = React.useMemo(() => {
+    if (!currentUser || !tickets) {
+      return { servedCount: 0, skippedCount: 0, avgServiceTime: 0, waitingInQueue: 0 };
+    }
+
+    const servedTickets = tickets.filter(t => t.status === 'done' && t.servedBy === currentUser.name);
+    const skippedTickets = tickets.filter(t => t.status === 'skipped' && t.servedBy === currentUser.name);
+    
+    const totalServiceSeconds = servedTickets.reduce((acc, t) => {
+        if (t.completedAt && t.calledAt) {
+            return acc + differenceInSeconds(t.completedAt, t.calledAt);
+        }
+        return acc;
+    }, 0);
+
+    const waitingInQueue = servicesForActiveCounter.reduce((acc, service) => {
+        return acc + (waitingCountByService[service.id] || 0);
+    }, 0);
+
+    return {
+        servedCount: servedTickets.length,
+        skippedCount: skippedTickets.length,
+        avgServiceTime: servedTickets.length > 0 ? totalServiceSeconds / servedTickets.length : 0,
+        waitingInQueue,
+    }
+  }, [tickets, currentUser, servicesForActiveCounter, waitingCountByService]);
+
+  const formatAvgTime = (seconds: number) => {
+    if (seconds === 0) return 'N/A';
+    const d = new Date(0);
+    d.setSeconds(seconds);
+    return d.toISOString().substr(14, 5);
+  }
 
   const handleLogout = async () => {
     try {
@@ -143,96 +181,145 @@ export default function StaffPage() {
       </header>
 
       <main className="flex-1 container mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-2 space-y-8">
-            <Card className="shadow-lg">
-              <CardHeader>
-                <CardTitle>Kontrol Antrian</CardTitle>
-                <CardDescription>
-                  Panggil antrian berikutnya dari loket aktif: <span className="font-bold text-primary">{counters.find(c => c.id === activeCounterId)?.name}</span>
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {activeCounterId ? (
-                    servicesForActiveCounter.length > 0 ? (
-                        servicesForActiveCounter.map((service) => {
-                          const Icon = getIcon(service.icon);
-                          return (
-                          <Card key={service.id} className="p-4 flex flex-col justify-between">
-                            <div className="flex items-start justify-between">
-                                <div>
-                                    <h3 className="font-semibold text-lg">{service.name}</h3>
-                                    <p className="text-sm text-muted-foreground">Antrian: {waitingCountByService[service.id] || 0}</p>
-                                </div>
-                                <Icon className="h-6 w-6 text-primary" />
-                            </div>
-                            <Button
-                              onClick={() => handleCallNext(service.id)}
-                              disabled={(waitingCountByService[service.id] || 0) === 0 || !!currentServingTicket}
-                              className="w-full mt-4"
-                            >
-                              <PhoneCall className="mr-2 h-4 w-4" />
-                              Panggil Berikutnya
-                            </Button>
-                          </Card>
-                          )
-                        })
-                    ) : (
-                        <p className="col-span-full text-muted-foreground">Tidak ada layanan yang diatur untuk loket ini.</p>
-                    )
-                ) : (
-                     <p className="col-span-full text-muted-foreground">Pilih loket aktif untuk melihat layanan yang tersedia.</p>
-                )}
-              </CardContent>
-            </Card>
-          </div>
+        <div className="space-y-8">
+             {/* Performance Summary Cards */}
+             <div>
+                <h2 className="text-xl font-bold text-primary mb-4">Ringkasan Kinerja Hari Ini</h2>
+                <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+                    <Card>
+                        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                            <CardTitle className="text-sm font-medium">Total Dilayani</CardTitle>
+                            <ThumbsUp className="h-4 w-4 text-muted-foreground" />
+                        </CardHeader>
+                        <CardContent>
+                            <div className="text-2xl font-bold">{staffPerformance.servedCount}</div>
+                            <p className="text-xs text-muted-foreground">tiket telah selesai</p>
+                        </CardContent>
+                    </Card>
+                    <Card>
+                        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                            <CardTitle className="text-sm font-medium">Dilewati</CardTitle>
+                            <XCircle className="h-4 w-4 text-muted-foreground" />
+                        </CardHeader>
+                        <CardContent>
+                            <div className="text-2xl font-bold">{staffPerformance.skippedCount}</div>
+                            <p className="text-xs text-muted-foreground">tiket dilewati</p>
+                        </CardContent>
+                    </Card>
+                    <Card>
+                        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                            <CardTitle className="text-sm font-medium">Waktu Layanan Rata-rata</CardTitle>
+                            <Clock className="h-4 w-4 text-muted-foreground" />
+                        </CardHeader>
+                        <CardContent>
+                            <div className="text-2xl font-bold">{formatAvgTime(staffPerformance.avgServiceTime)}</div>
+                            <p className="text-xs text-muted-foreground">per tiket (menit:detik)</p>
+                        </CardContent>
+                    </Card>
+                     <Card>
+                        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                            <CardTitle className="text-sm font-medium">Antrian Menunggu</CardTitle>
+                            <Ticket className="h-4 w-4 text-muted-foreground" />
+                        </CardHeader>
+                        <CardContent>
+                            <div className="text-2xl font-bold">{staffPerformance.waitingInQueue}</div>
+                            <p className="text-xs text-muted-foreground">untuk layanan Anda</p>
+                        </CardContent>
+                    </Card>
+                </div>
+            </div>
 
-          <div className="space-y-8">
-            <Card className="shadow-lg sticky top-28">
-              <CardHeader>
-                <CardTitle>Sedang Dilayani</CardTitle>
-              </CardHeader>
-              <CardContent className="text-center">
-                {currentServingTicket ? (
-                  <div className="space-y-4">
-                    <p className="text-6xl font-extrabold text-primary">
-                      {currentServingTicket.number}
-                    </p>
-                    <p className="text-muted-foreground font-medium">
-                      {currentServingTicket.service.name}
-                    </p>
-                    <div className="flex items-center justify-center text-sm text-muted-foreground">
-                      <Clock className="mr-2 h-4 w-4" />
-                      Dipanggil pada:{' '}
-                      {new Date(currentServingTicket.timestamp).toLocaleTimeString('id-ID')}
-                    </div>
-                    <div className="pt-4 space-y-2">
-                       <Button onClick={() => recallTicket(currentServingTicket.id)} size="lg" variant="secondary" className="w-full">
-                        Panggil Ulang
-                      </Button>
-                      <Button onClick={handleSkip} size="lg" variant="outline" className="w-full">
-                        <SkipForward className="mr-2 h-4 w-4" />
-                        Lewati Antrian
-                      </Button>
-                      <Button onClick={handleComplete} size="lg" className="w-full">
-                        <CheckCircle className="mr-2 h-4 w-4" />
-                        Selesai Melayani
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="text-center py-10">
-                    <p className="text-muted-foreground">
-                      Tidak ada antrian yang sedang dilayani di loket ini.
-                    </p>
-                    <p className="text-sm text-muted-foreground/80 mt-2">
-                        Pilih "Panggil Berikutnya" dari salah satu layanan.
-                    </p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              <div className="lg:col-span-2 space-y-8">
+                <Card className="shadow-lg">
+                  <CardHeader>
+                    <CardTitle>Kontrol Antrian</CardTitle>
+                    <CardDescription>
+                      Panggil antrian berikutnya dari loket aktif: <span className="font-bold text-primary">{counters.find(c => c.id === activeCounterId)?.name || '...'}</span>
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {activeCounterId ? (
+                        servicesForActiveCounter.length > 0 ? (
+                            servicesForActiveCounter.map((service) => {
+                              const Icon = getIcon(service.icon);
+                              return (
+                              <Card key={service.id} className="p-4 flex flex-col justify-between">
+                                <div className="flex items-start justify-between">
+                                    <div>
+                                        <h3 className="font-semibold text-lg">{service.name}</h3>
+                                        <p className="text-sm text-muted-foreground">Antrian: {waitingCountByService[service.id] || 0}</p>
+                                    </div>
+                                    <Icon className="h-6 w-6 text-primary" />
+                                </div>
+                                <Button
+                                  onClick={() => handleCallNext(service.id)}
+                                  disabled={(waitingCountByService[service.id] || 0) === 0 || !!currentServingTicket}
+                                  className="w-full mt-4"
+                                >
+                                  <PhoneCall className="mr-2 h-4 w-4" />
+                                  Panggil Berikutnya
+                                </Button>
+                              </Card>
+                              )
+                            })
+                        ) : (
+                            <p className="col-span-full text-muted-foreground">Tidak ada layanan yang diatur untuk loket ini.</p>
+                        )
+                    ) : (
+                         <p className="col-span-full text-muted-foreground">Pilih loket aktif untuk melihat layanan yang tersedia.</p>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+
+              <div className="space-y-8">
+                <Card className="shadow-lg sticky top-28">
+                  <CardHeader>
+                    <CardTitle>Sedang Dilayani</CardTitle>
+                  </CardHeader>
+                  <CardContent className="text-center">
+                    {currentServingTicket ? (
+                      <div className="space-y-4">
+                        <p className="text-6xl font-extrabold text-primary">
+                          {currentServingTicket.number}
+                        </p>
+                        <p className="text-muted-foreground font-medium">
+                          {currentServingTicket.service.name}
+                        </p>
+                        <div className="flex items-center justify-center text-sm text-muted-foreground">
+                          <Clock className="mr-2 h-4 w-4" />
+                          Dipanggil pada:{' '}
+                          {new Date(currentServingTicket.timestamp).toLocaleTimeString('id-ID')}
+                        </div>
+                        <div className="pt-4 space-y-2">
+                           <Button onClick={() => recallTicket(currentServingTicket.id)} size="lg" variant="secondary" className="w-full">
+                            Panggil Ulang
+                          </Button>
+                          <Button onClick={handleSkip} size="lg" variant="outline" className="w-full">
+                            <SkipForward className="mr-2 h-4 w-4" />
+                            Lewati Antrian
+                          </Button>
+                          <Button onClick={handleComplete} size="lg" className="w-full">
+                            <CheckCircle className="mr-2 h-4 w-4" />
+                            Selesai Melayani
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-center py-10">
+                        <p className="text-muted-foreground">
+                          Tidak ada antrian yang sedang dilayani di loket ini.
+                        </p>
+                        <p className="text-sm text-muted-foreground/80 mt-2">
+                            Pilih "Panggil Berikutnya" dari salah satu layanan.
+                        </p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
         </div>
       </main>
     </div>

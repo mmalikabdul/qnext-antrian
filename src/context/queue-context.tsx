@@ -40,6 +40,10 @@ export interface Ticket {
   service: Service; // This will be enriched data
   timestamp: Date;
   status: 'waiting' | 'serving' | 'done' | 'skipped';
+  // Optional fields for performance tracking
+  calledAt?: Date;
+  completedAt?: Date;
+  servedBy?: string;
 }
 
 export interface ReportTicket {
@@ -332,6 +336,9 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
             timestamp: data.timestamp.toDate(),
             number: data.number,
             status: data.status,
+            calledAt: data.calledAt?.toDate(),
+            completedAt: data.completedAt?.toDate(),
+            servedBy: data.servedBy,
             service: {} as Service
         });
       });
@@ -491,7 +498,11 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
 
   const skipTicket = async (ticketId: string) => {
     try {
-        await updateDoc(doc(db, 'tickets', ticketId), { status: 'skipped' });
+        await updateDoc(doc(db, 'tickets', ticketId), { 
+            status: 'skipped',
+            // Keep servedBy to attribute the skip, but also mark completion time
+            completedAt: serverTimestamp() 
+        });
         await clearServingAndRecall();
         toast({ variant: "warning", title: "Antrian Dilewati", description: "Antrian telah ditandai sebagai dilewati."});
 
