@@ -214,6 +214,12 @@ const StaffTab = () => {
                 setEditingStaff(null);
             } else { // Adding
                 if (!currentUser) throw new Error("Admin user not found.");
+
+                const isDuplicateName = staff.some(s => s.name.toLowerCase() === data.name.toLowerCase());
+                if (isDuplicateName) {
+                    toast({ title: "Gagal", description: "Nama petugas sudah ada. Silakan gunakan nama lain.", variant: "destructive" });
+                    return;
+                }
                 
                 await addStaff(data);
                 
@@ -375,9 +381,16 @@ const CounterTab = () => {
                 await updateCounter(data);
                 toast({ title: "Sukses", description: "Data loket berhasil diperbarui." });
             } else {
+                const isDuplicate = counters.some(c => c.name.toLowerCase() === data.name.toLowerCase());
+                if (isDuplicate) {
+                    toast({ title: "Error", description: "Nama loket sudah ada.", variant: "destructive" });
+                    return;
+                }
                 await addCounter(data);
                 toast({ title: "Sukses", description: "Loket baru berhasil ditambahkan." });
             }
+            setIsAddOpen(false);
+            setEditingCounter(null);
         } catch(e) {
             toast({ title: "Error", description: "Gagal menyimpan data loket.", variant: "destructive" });
         }
