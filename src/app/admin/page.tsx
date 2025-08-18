@@ -263,7 +263,9 @@ const StaffTab = () => {
     
     const handleSuccessAlertClose = () => {
         setShowSuccessAlert(false);
-        // Keep the user logged in
+        // This will trigger the auth listener in context to re-route
+        logoutUser(); 
+        router.push('/login');
     }
 
     const handleDeleteStaff = async (id: string) => {
@@ -830,7 +832,7 @@ const ReportTab = () => {
         });
     };
 
-    const formatDuration = (start: Date, end: Date) => {
+    const formatDuration = (start?: Date, end?: Date) => {
         if (!start || !end) return '-';
         return formatDistanceStrict(end, start, { locale: localeID });
     };
@@ -970,8 +972,8 @@ const ReportTab = () => {
                                         <TableCell className="font-medium">{ticket.number}</TableCell>
                                         <TableCell>{ticket.serviceName}</TableCell>
                                         <TableCell>{format(ticket.timestamp, 'HH:mm:ss')}</TableCell>
-                                        <TableCell>{ticket.calledAt ? formatDuration(ticket.timestamp, ticket.calledAt) : '-'}</TableCell>
-                                        <TableCell>{(ticket.calledAt && ticket.completedAt) ? formatDuration(ticket.calledAt, ticket.completedAt) : '-'}</TableCell>
+                                        <TableCell>{formatDuration(ticket.timestamp, ticket.calledAt)}</TableCell>
+                                        <TableCell>{formatDuration(ticket.calledAt, ticket.completedAt)}</TableCell>
                                         <TableCell>{ticket.servedBy || '-'}</TableCell>
                                         <TableCell>{ticket.counter || '-'}</TableCell>
                                         <TableCell className="capitalize">{ticket.status}</TableCell>
@@ -1019,9 +1021,7 @@ export default function AdminPage() {
 
   const handleLogout = async () => {
     try {
-        const auth = getAuth(app);
-        await auth.signOut();
-        logoutUser();
+        await logoutUser();
         toast({ title: "Logout Berhasil", description: "Anda telah keluar dari sesi." });
         router.push('/login');
     } catch (error) {

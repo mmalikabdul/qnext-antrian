@@ -3,7 +3,7 @@
 import type { ReactNode } from 'react';
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { db, app } from '@/lib/firebase';
-import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword } from 'firebase/auth';
+import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
 import { 
     collection, 
     onSnapshot, 
@@ -128,7 +128,7 @@ interface QueueState {
 interface QueueContextType {
   state: QueueState;
   loginUser: (user: User) => void;
-  logoutUser: () => void;
+  logoutUser: () => Promise<void>;
   addTicket: (service: Service) => Promise<Ticket | null>;
   callNextTicket: (serviceId: string, counter: number) => Promise<void>;
   completeTicket: (ticketId: string) => Promise<void>;
@@ -179,18 +179,15 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
         if (user) {
             // Check if this user object is already the current user to avoid redundant fetches
-            if (state.currentUser && user.uid === state.currentUser.uid) {
-                setState(prevState => ({...prevState, authLoaded: true}));
-
+            if (state.currentUser && user.uid === state.currentUser.uid && state.authLoaded) {
                 return;
             }
 
             const userDocRef = doc(db, 'users', user.uid);
             let userDocSnap = await getDoc(userDocRef);
 
-            // Add retry mechanism in case Firestore write is delayed
             const maxRetries = 5;
-            const retryDelayMs = 200;
+            const retryDelayMs = 300;
             let retries = 0;
 
             while (!userDocSnap.exists() && retries < maxRetries) {
@@ -206,8 +203,7 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
                 const staffDocRef = doc(db, 'staff', user.uid);
                 let staffDocSnap = await getDoc(staffDocRef);
 
-                // Add retry mechanism for staff doc as well
-                retries = 0; // Reset retries for staff doc
+                retries = 0; 
                 while (userData.role === 'staff' && !staffDocSnap.exists() && retries < maxRetries) {
                     console.log(`Staff document not found for ${user.uid}, retrying... Attempt ${retries + 1}/${maxRetries}`);
                     await new Promise(resolve => setTimeout(resolve, retryDelayMs));
@@ -226,7 +222,7 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
         }
     });
     return () => unsubscribe();
-  }, [auth, state.currentUser]);
+  }, [auth, state.currentUser, state.authLoaded]);
 
 
   const loginUser = (user: User) => {
@@ -237,7 +233,8 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
-  const logoutUser = () => {
+  const logoutUser = async () => {
+    await signOut(auth);
     setState(prevState => ({ ...prevState, currentUser: null }));
   };
 
@@ -512,6 +509,11 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
   // --- Admin Functions ---
   const addStaff = async (userData: any) => {
     const { email, password, name, role, counters } = userData;
+    const currentAdmin = auth.currentUser;
+    if (!currentAdmin) {
+        throw new Error("Admin not logged in!");
+    }
+    
     try {
         const newUserCredential = await createUserWithEmailAndPassword(auth, email, password);
         const newUser = newUserCredential.user;
