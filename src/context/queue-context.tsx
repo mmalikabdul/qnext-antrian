@@ -44,6 +44,7 @@ export interface Ticket {
   calledAt?: Date;
   completedAt?: Date;
   servedBy?: string;
+  counter?: number;
 }
 
 export interface ReportTicket {
@@ -339,6 +340,7 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
             calledAt: data.calledAt?.toDate(),
             completedAt: data.completedAt?.toDate(),
             servedBy: data.servedBy,
+            counter: data.counter,
             service: {} as Service
         });
       });
@@ -679,3 +681,4 @@ export const useQueue = () => {
   }
   return context;
 };
+ 

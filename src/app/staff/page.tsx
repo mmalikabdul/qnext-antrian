@@ -22,13 +22,19 @@ import {
   Ticket,
   ThumbsUp,
   XCircle,
+  List,
 } from 'lucide-react';
 import QNextLogo from '@/components/icons/q-next-logo';
 import { useToast } from '@/hooks/use-toast';
 import { getAuth } from 'firebase/auth';
 import { app } from '@/lib/firebase';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { formatDistanceStrict, differenceInSeconds } from 'date-fns';
+import { formatDistanceStrict, differenceInSeconds, format } from 'date-fns';
+import { id as localeID } from 'date-fns/locale';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Badge } from '@/components/ui/badge';
+
 
 const getIcon = (iconName: string): React.ComponentType<LucideIcons.LucideProps> => {
     // @ts-ignore
@@ -72,13 +78,20 @@ export default function StaffPage() {
     return acc;
   }, {} as Record<string, number>);
 
-  const staffPerformance = React.useMemo(() => {
+  const { performance, handledTickets } = React.useMemo(() => {
     if (!currentUser || !tickets) {
-      return { servedCount: 0, skippedCount: 0, avgServiceTime: 0, waitingInQueue: 0 };
+      return { 
+        performance: { servedCount: 0, skippedCount: 0, avgServiceTime: 0, waitingInQueue: 0 },
+        handledTickets: []
+      };
     }
 
-    const servedTickets = tickets.filter(t => t.status === 'done' && t.servedBy === currentUser.name);
-    const skippedTickets = tickets.filter(t => t.status === 'skipped' && t.servedBy === currentUser.name);
+    const myHandledTickets = tickets
+      .filter(t => (t.status === 'done' || t.status === 'skipped') && t.servedBy === currentUser.name)
+      .sort((a, b) => (b.completedAt?.getTime() || 0) - (a.completedAt?.getTime() || 0));
+    
+    const servedTickets = myHandledTickets.filter(t => t.status === 'done');
+    const skippedTickets = myHandledTickets.filter(t => t.status === 'skipped');
     
     const totalServiceSeconds = servedTickets.reduce((acc, t) => {
         if (t.completedAt && t.calledAt) {
@@ -92,10 +105,13 @@ export default function StaffPage() {
     }, 0);
 
     return {
-        servedCount: servedTickets.length,
-        skippedCount: skippedTickets.length,
-        avgServiceTime: servedTickets.length > 0 ? totalServiceSeconds / servedTickets.length : 0,
-        waitingInQueue,
+        performance: {
+            servedCount: servedTickets.length,
+            skippedCount: skippedTickets.length,
+            avgServiceTime: servedTickets.length > 0 ? totalServiceSeconds / servedTickets.length : 0,
+            waitingInQueue,
+        },
+        handledTickets: myHandledTickets,
     }
   }, [tickets, currentUser, servicesForActiveCounter, waitingCountByService]);
 
@@ -105,6 +121,11 @@ export default function StaffPage() {
     d.setSeconds(seconds);
     return d.toISOString().substr(14, 5);
   }
+  
+  const formatDuration = (start?: Date, end?: Date) => {
+      if (!start || !end) return '-';
+      return formatDistanceStrict(end, start, { locale: localeID });
+  };
 
   const handleLogout = async () => {
     try {
@@ -192,7 +213,7 @@ export default function StaffPage() {
                             <ThumbsUp className="h-4 w-4 text-muted-foreground" />
                         </CardHeader>
                         <CardContent>
-                            <div className="text-2xl font-bold">{staffPerformance.servedCount}</div>
+                            <div className="text-2xl font-bold">{performance.servedCount}</div>
                             <p className="text-xs text-muted-foreground">tiket telah selesai</p>
                         </CardContent>
                     </Card>
@@ -202,7 +223,7 @@ export default function StaffPage() {
                             <XCircle className="h-4 w-4 text-muted-foreground" />
                         </CardHeader>
                         <CardContent>
-                            <div className="text-2xl font-bold">{staffPerformance.skippedCount}</div>
+                            <div className="text-2xl font-bold">{performance.skippedCount}</div>
                             <p className="text-xs text-muted-foreground">tiket dilewati</p>
                         </CardContent>
                     </Card>
@@ -212,7 +233,7 @@ export default function StaffPage() {
                             <Clock className="h-4 w-4 text-muted-foreground" />
                         </CardHeader>
                         <CardContent>
-                            <div className="text-2xl font-bold">{formatAvgTime(staffPerformance.avgServiceTime)}</div>
+                            <div className="text-2xl font-bold">{formatAvgTime(performance.avgServiceTime)}</div>
                             <p className="text-xs text-muted-foreground">per tiket (menit:detik)</p>
                         </CardContent>
                     </Card>
@@ -222,7 +243,7 @@ export default function StaffPage() {
                             <Ticket className="h-4 w-4 text-muted-foreground" />
                         </CardHeader>
                         <CardContent>
-                            <div className="text-2xl font-bold">{staffPerformance.waitingInQueue}</div>
+                            <div className="text-2xl font-bold">{performance.waitingInQueue}</div>
                             <p className="text-xs text-muted-foreground">untuk layanan Anda</p>
                         </CardContent>
                     </Card>
@@ -271,6 +292,59 @@ export default function StaffPage() {
                     )}
                   </CardContent>
                 </Card>
+
+                <Card className="shadow-lg">
+                    <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                            <List />
+                            Riwayat Aktivitas Anda Hari Ini
+                        </CardTitle>
+                         <CardDescription>
+                            Daftar tiket yang telah Anda tangani (selesai atau dilewati).
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <ScrollArea className="h-96">
+                            <Table>
+                                <TableHeader>
+                                <TableRow>
+                                    <TableHead>No. Tiket</TableHead>
+                                    <TableHead>Layanan</TableHead>
+                                    <TableHead>Waktu Panggil</TableHead>
+                                    <TableHead>Waktu Selesai</TableHead>
+                                    <TableHead>Durasi</TableHead>
+                                    <TableHead>Status</TableHead>
+                                </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                {handledTickets.length > 0 ? (
+                                    handledTickets.map(ticket => (
+                                    <TableRow key={ticket.id}>
+                                        <TableCell className="font-medium">{ticket.number}</TableCell>
+                                        <TableCell>{ticket.service.name}</TableCell>
+                                        <TableCell>{ticket.calledAt ? format(ticket.calledAt, 'HH:mm:ss') : '-'}</TableCell>
+                                        <TableCell>{ticket.completedAt ? format(ticket.completedAt, 'HH:mm:ss') : '-'}</TableCell>
+                                        <TableCell>{formatDuration(ticket.calledAt, ticket.completedAt)}</TableCell>
+                                        <TableCell>
+                                             <Badge variant={ticket.status === 'done' ? 'secondary' : 'outline'} className={ticket.status === 'done' ? "text-green-700 border-green-200 bg-green-50" : ""}>
+                                                {ticket.status === 'done' ? 'Selesai' : 'Dilewati'}
+                                            </Badge>
+                                        </TableCell>
+                                    </TableRow>
+                                    ))
+                                ) : (
+                                    <TableRow>
+                                    <TableCell colSpan={6} className="text-center h-24 text-muted-foreground">
+                                        Anda belum menangani tiket hari ini.
+                                    </TableCell>
+                                    </TableRow>
+                                )}
+                                </TableBody>
+                            </Table>
+                        </ScrollArea>
+                    </CardContent>
+                </Card>
+
               </div>
 
               <div className="space-y-8">
@@ -290,7 +364,7 @@ export default function StaffPage() {
                         <div className="flex items-center justify-center text-sm text-muted-foreground">
                           <Clock className="mr-2 h-4 w-4" />
                           Dipanggil pada:{' '}
-                          {new Date(currentServingTicket.timestamp).toLocaleTimeString('id-ID')}
+                          {currentServingTicket.calledAt ? format(currentServingTicket.calledAt, 'HH:mm:ss') : format(currentServingTicket.timestamp, 'HH:mm:ss')}
                         </div>
                         <div className="pt-4 space-y-2">
                            <Button onClick={() => recallTicket(currentServingTicket.id)} size="lg" variant="secondary" className="w-full">
@@ -325,3 +399,4 @@ export default function StaffPage() {
     </div>
   );
 }
+ 
