@@ -6,7 +6,7 @@ import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis, CartesianGrid, Toolti
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import * as LucideIcons from 'lucide-react';
-import { Users, Briefcase, Ticket, Clock, LogOut, BarChart2, Settings, UserCog, Building, FileText, PlusCircle, Edit, Trash2, Film, ChevronLeft, ChevronRight, Menu, Icon as IconType } from 'lucide-react';
+import { Users, Briefcase, Ticket, Clock, LogOut, BarChart2, Settings, UserCog, Building, FileText, PlusCircle, Edit, Trash2, Film, ChevronLeft, ChevronRight, Menu, Icon as IconType, Monitor } from 'lucide-react';
 
 import QNextLogo from '@/components/icons/q-next-logo';
 import { useQueue } from '@/context/queue-context';
@@ -23,6 +23,8 @@ import { app } from '@/lib/firebase';
 import { cn } from '@/lib/utils';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import Link from 'next/link';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 
 const chartData = [
   { name: '09:00', 'Layanan Konsultasi': 12, 'Pengajuan Perizinan': 20, 'Layanan Prioritas': 5 },
@@ -120,16 +122,22 @@ const StaffForm = ({ staff, onSave, closeDialog }: { staff?: (Staff & User) | nu
     const [password, setPassword] = React.useState('');
     const [assignedCounters, setAssignedCounters] = React.useState<number[]>(staff?.counters || []);
     const [isLoading, setIsLoading] = React.useState(false);
+    const [role, setRole] = React.useState<'admin' | 'staff'>(staff?.role || 'staff');
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsLoading(true);
-        const staffData: any = { name, counters: assignedCounters };
+        const staffData: any = { name, role };
+        
+        if (role === 'staff') {
+            staffData.counters = assignedCounters;
+        }
+
         if (staff?.uid) { // Editing existing staff
             staffData.uid = staff.uid;
         } else { // Adding new staff
             if (!email || !password) {
-                alert("Email dan password harus diisi untuk petugas baru.");
+                alert("Email dan password harus diisi untuk pengguna baru.");
                 setIsLoading(false);
                 return;
             }
@@ -146,7 +154,7 @@ const StaffForm = ({ staff, onSave, closeDialog }: { staff?: (Staff & User) | nu
     return (
         <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-                <Label htmlFor="staff-name">Nama Petugas</Label>
+                <Label htmlFor="staff-name">Nama Pengguna</Label>
                 <Input id="staff-name" value={name} onChange={(e) => setName(e.target.value)} required />
             </div>
             {!staff && (
@@ -159,30 +167,45 @@ const StaffForm = ({ staff, onSave, closeDialog }: { staff?: (Staff & User) | nu
                         <Label htmlFor="staff-password">Password</Label>
                         <Input id="staff-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
                     </div>
+                    <div className="space-y-2">
+                      <Label>Peran</Label>
+                      <RadioGroup defaultValue={role} onValueChange={(value: 'admin' | 'staff') => setRole(value)} className="flex gap-4">
+                          <div className="flex items-center space-x-2">
+                              <RadioGroupItem value="staff" id="r1" />
+                              <Label htmlFor="r1">Petugas (Staff)</Label>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                              <RadioGroupItem value="admin" id="r2" />
+                              <Label htmlFor="r2">Admin</Label>
+                          </div>
+                      </RadioGroup>
+                    </div>
                 </>
             )}
-            <div className="space-y-2">
-                <Label>Loket yang Dilayani</Label>
-                <div className="grid grid-cols-3 gap-2">
-                    {counters && counters.filter(c => c.status === 'open').map(counter => (
-                        <div key={counter.id} className="flex items-center gap-2">
-                            <input
-                                type="checkbox"
-                                id={`counter-${counter.id}`}
-                                checked={assignedCounters.includes(counter.id)}
-                                onChange={(e) => {
-                                    if (e.target.checked) {
-                                        setAssignedCounters([...assignedCounters, counter.id]);
-                                    } else {
-                                        setAssignedCounters(assignedCounters.filter(id => id !== counter.id));
-                                    }
-                                }}
-                            />
-                            <Label htmlFor={`counter-${counter.id}`}>{counter.name}</Label>
-                        </div>
-                    ))}
+            {role === 'staff' && (
+                <div className="space-y-2">
+                    <Label>Loket yang Dilayani</Label>
+                    <div className="grid grid-cols-3 gap-2">
+                        {counters && counters.filter(c => c.status === 'open').map(counter => (
+                            <div key={counter.id} className="flex items-center gap-2">
+                                <input
+                                    type="checkbox"
+                                    id={`counter-${counter.id}`}
+                                    checked={assignedCounters.includes(counter.id)}
+                                    onChange={(e) => {
+                                        if (e.target.checked) {
+                                            setAssignedCounters([...assignedCounters, counter.id]);
+                                        } else {
+                                            setAssignedCounters(assignedCounters.filter(id => id !== counter.id));
+                                        }
+                                    }}
+                                />
+                                <Label htmlFor={`counter-${counter.id}`}>{counter.name}</Label>
+                            </div>
+                        ))}
+                    </div>
                 </div>
-            </div>
+            )}
             <DialogFooter>
                 <Button type="button" variant="outline" onClick={closeDialog}>Batal</Button>
                 <Button type="submit" disabled={isLoading}>{isLoading ? "Menyimpan..." : "Simpan"}</Button>
@@ -200,24 +223,24 @@ const StaffTab = () => {
     const router = useRouter();
     const auth = getAuth(app);
     
-    const combinedStaffData = staff.map(s => {
-        const userData = users.find(u => u.uid === s.id);
-        return { ...s, ...userData };
+    const combinedUserData = users.map(u => {
+        const staffData = staff.find(s => s.id === u.uid);
+        return { ...u, ...staffData, id: u.uid };
     });
 
     const handleSaveStaff = async (data: any) => {
         try {
             if (data.uid) { // Editing
-                const staffData = { id: data.uid, name: data.name, counters: data.counters };
+                const staffData = { id: data.uid, name: data.name, counters: data.counters || [] };
                 await updateStaff(staffData);
-                toast({ variant: "success", title: "Sukses", description: "Data petugas berhasil diperbarui." });
+                toast({ variant: "success", title: "Sukses", description: "Data pengguna berhasil diperbarui." });
                 setEditingStaff(null);
             } else { // Adding
                 if (!currentUser) throw new Error("Admin user not found.");
 
-                const isDuplicateName = staff.some(s => s.name.toLowerCase() === data.name.toLowerCase());
+                const isDuplicateName = users.some(u => u.name?.toLowerCase() === data.name.toLowerCase());
                 if (isDuplicateName) {
-                    toast({ variant: "destructive", title: "Gagal", description: "Nama petugas sudah ada. Silakan gunakan nama lain." });
+                    toast({ variant: "destructive", title: "Gagal", description: "Nama pengguna sudah ada. Silakan gunakan nama lain." });
                     return;
                 }
                 
@@ -226,7 +249,7 @@ const StaffTab = () => {
                 toast({ 
                     variant: "success",
                     title: "Sukses", 
-                    description: "Petugas baru berhasil ditambahkan. Anda akan logout. Silakan login kembali." 
+                    description: "Pengguna baru berhasil ditambahkan. Anda akan logout. Silakan login kembali." 
                 });
                 setIsAddOpen(false);
 
@@ -240,7 +263,7 @@ const StaffTab = () => {
             console.error("Failed to save staff:", e);
             const message = e.code === 'auth/email-already-in-use' 
                 ? "Email sudah digunakan oleh akun lain."
-                : `Gagal menyimpan data petugas: ${e.message}`;
+                : `Gagal menyimpan data pengguna: ${e.message}`;
             toast({ variant: "destructive", title: "Error", description: message });
         }
     }
@@ -248,9 +271,9 @@ const StaffTab = () => {
     const handleDeleteStaff = async (id: string) => {
         try {
             await deleteStaff(id);
-            toast({ variant: "success", title: "Sukses", description: "Petugas berhasil dihapus." });
+            toast({ variant: "success", title: "Sukses", description: "Pengguna berhasil dihapus." });
         } catch(e: any) {
-            toast({ variant: "destructive", title: "Error", description: `Gagal menghapus petugas. ${e.message}` });
+            toast({ variant: "destructive", title: "Error", description: `Gagal menghapus pengguna. ${e.message}` });
         }
     }
 
@@ -262,16 +285,16 @@ const StaffTab = () => {
         <Card>
             <CardHeader className="flex flex-row items-center justify-between">
                 <div>
-                    <CardTitle>Manajemen Petugas</CardTitle>
-                    <CardDescription>Tambah, edit, atau hapus data petugas dan akun login mereka.</CardDescription>
+                    <CardTitle>Manajemen Pengguna</CardTitle>
+                    <CardDescription>Tambah, edit, atau hapus data pengguna dan akun login mereka.</CardDescription>
                 </div>
                  <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
                     <DialogTrigger asChild>
-                        <Button onClick={() => setEditingStaff(null)}><PlusCircle className="mr-2"/> Tambah Petugas</Button>
+                        <Button onClick={() => setEditingStaff(null)}><PlusCircle className="mr-2"/> Tambah Pengguna</Button>
                     </DialogTrigger>
                     <DialogContent>
                         <DialogHeader>
-                            <DialogTitle>Tambah Petugas Baru</DialogTitle>
+                            <DialogTitle>Tambah Pengguna Baru</DialogTitle>
                         </DialogHeader>
                         <StaffForm onSave={handleSaveStaff} closeDialog={() => setIsAddOpen(false)} />
                     </DialogContent>
@@ -283,16 +306,18 @@ const StaffTab = () => {
                         <TableRow>
                             <TableHead>Nama</TableHead>
                             <TableHead>Email</TableHead>
+                            <TableHead>Peran</TableHead>
                             <TableHead>Loket yang Dilayani</TableHead>
                             <TableHead className="text-right">Aksi</TableHead>
                         </TableRow>
                     </TableHeader>
                     <TableBody>
-                        {combinedStaffData.filter(s => s.role === 'staff').map(s => (
+                        {combinedUserData.map(s => (
                             <TableRow key={s.id}>
                                 <TableCell className="font-medium">{s.name}</TableCell>
-                                 <TableCell>{s.email}</TableCell>
-                                <TableCell>{s.counters.map(getCounterName).join(', ')}</TableCell>
+                                <TableCell>{s.email}</TableCell>
+                                <TableCell className="capitalize">{s.role}</TableCell>
+                                <TableCell>{s.role === 'staff' ? s.counters?.map(getCounterName).join(', ') || '-' : 'N/A'}</TableCell>
                                 <TableCell className="text-right">
                                      <Dialog open={editingStaff?.id === s.id} onOpenChange={(isOpen) => !isOpen && setEditingStaff(null)}>
                                         <DialogTrigger asChild>
@@ -300,19 +325,19 @@ const StaffTab = () => {
                                         </DialogTrigger>
                                         <DialogContent>
                                             <DialogHeader>
-                                                <DialogTitle>Edit Petugas</DialogTitle>
+                                                <DialogTitle>Edit Pengguna</DialogTitle>
                                             </DialogHeader>
                                             <StaffForm staff={s as (Staff & User)} onSave={handleSaveStaff} closeDialog={() => setEditingStaff(null)} />
                                         </DialogContent>
                                     </Dialog>
                                     <AlertDialog>
                                         <AlertDialogTrigger asChild>
-                                            <Button variant="ghost" size="icon" className="text-destructive"><Trash2 className="h-4 w-4"/></Button>
+                                            <Button variant="ghost" size="icon" className="text-destructive" disabled={s.uid === currentUser?.uid}><Trash2 className="h-4 w-4"/></Button>
                                         </AlertDialogTrigger>
                                         <AlertDialogContent>
                                             <AlertDialogHeader>
                                                 <AlertDialogTitle>Anda yakin?</AlertDialogTitle>
-                                                <AlertDialogDescription>Tindakan ini akan menghapus akun login dan data petugas secara permanen.</AlertDialogDescription>
+                                                <AlertDialogDescription>Tindakan ini akan menghapus akun login dan data pengguna secara permanen.</AlertDialogDescription>
                                             </AlertDialogHeader>
                                             <AlertDialogFooter>
                                                 <AlertDialogCancel>Batal</AlertDialogCancel>
@@ -752,12 +777,13 @@ const ReportTab = () => {
 }
 
 const navItems = [
-    { id: 'dashboard', label: 'Dasbor', icon: BarChart2 },
-    { id: 'staff', label: 'Petugas', icon: UserCog },
-    { id: 'counters', label: 'Loket', icon: Building },
-    { id: 'services', label: 'Layanan', icon: Settings },
-    { id: 'video', label: 'Video', icon: Film },
-    { id: 'reports', label: 'Laporan', icon: FileText },
+    { id: 'dashboard', label: 'Dasbor', icon: BarChart2, action: (setActiveTab: Function) => setActiveTab('dashboard') },
+    { id: 'staff', label: 'Pengguna', icon: UserCog, action: (setActiveTab: Function) => setActiveTab('staff') },
+    { id: 'counters', label: 'Loket', icon: Building, action: (setActiveTab: Function) => setActiveTab('counters') },
+    { id: 'services', label: 'Layanan', icon: Settings, action: (setActiveTab: Function) => setActiveTab('services') },
+    { id: 'video', label: 'Video', icon: Film, action: (setActiveTab: Function) => setActiveTab('video') },
+    { id: 'monitor', label: 'Monitor', icon: Monitor, action: () => window.open('/monitor', '_blank') },
+    { id: 'reports', label: 'Laporan', icon: FileText, action: (setActiveTab: Function) => setActiveTab('reports') },
 ]
 
 export default function AdminPage() {
@@ -839,7 +865,7 @@ export default function AdminPage() {
                         "w-full justify-start",
                         !isSidebarOpen && "justify-center"
                     )}
-                    onClick={() => setActiveTab(item.id)}
+                    onClick={() => item.action(setActiveTab)}
                 >
                     <item.icon className="h-5 w-5"/>
                     <span className={cn(isSidebarOpen ? "ml-4" : "sr-only")}>{item.label}</span>
@@ -880,7 +906,7 @@ export default function AdminPage() {
                                 variant={activeTab === item.id ? 'secondary' : 'ghost'}
                                 className="w-full justify-start"
                                 onClick={() => {
-                                    setActiveTab(item.id);
+                                    item.action(setActiveTab);
                                     setIsMobileMenuOpen(false);
                                 }}
                             >
@@ -903,3 +929,5 @@ export default function AdminPage() {
     </div>
   );
 }
+
+    

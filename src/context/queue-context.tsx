@@ -219,7 +219,7 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
         const users: User[] = [];
         querySnapshot.forEach((doc) => {
-            users.push({ uid: doc.id, ...doc.data() } as User);
+            users.push({ uid: doc.id, name: doc.data().name, ...doc.data() } as User);
         });
         setState(prevState => ({...prevState, users}));
     }, (error) => console.error("Error fetching users:", error));
@@ -453,8 +453,8 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
   };
 
   // --- Admin Functions ---
-  const addStaff = async (staffData: any) => {
-    const { email, password, name, counters } = staffData;
+  const addStaff = async (userData: any) => {
+    const { email, password, name, role, counters } = userData;
     const tempAuth = getAuth(app); // Use the same app instance
     
     try {
@@ -465,10 +465,12 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
         // 2. Immediately write the Firestore data for the new user.
         const batch = writeBatch(db);
         const userDocRef = doc(db, 'users', newUser.uid);
-        batch.set(userDocRef, { email, role: 'staff' });
+        batch.set(userDocRef, { name, email, role });
         
-        const staffDocRef = doc(db, 'staff', newUser.uid);
-        batch.set(staffDocRef, { name, counters });
+        if (role === 'staff') {
+            const staffDocRef = doc(db, 'staff', newUser.uid);
+            batch.set(staffDocRef, { name, counters: counters || [] });
+        }
         
         await batch.commit();
 
@@ -487,6 +489,11 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
   const updateStaff = async (staff: Staff) => {
       const { id, ...data } = staff;
       await updateDoc(doc(db, 'staff', id), data);
+      const userDocRef = doc(db, 'users', id);
+      const userDocSnap = await getDoc(userDocRef);
+      if (userDocSnap.exists()) {
+          await updateDoc(userDocRef, { name: data.name });
+      }
   }
 
   const deleteStaff = async (staffId: string) => {
@@ -502,7 +509,7 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
         console.warn(`User with UID ${staffId} deleted from Firestore, but not from Firebase Auth.`);
       } catch (error) {
           console.error("Error deleting staff data:", error);
-          throw new Error("Gagal menghapus data petugas dari database.");
+          throw new Error("Gagal menghapus data pengguna dari database.");
       }
   }
 
@@ -582,3 +589,5 @@ export const useQueue = () => {
   }
   return context;
 };
+
+    
