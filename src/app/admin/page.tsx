@@ -6,11 +6,16 @@ import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis, CartesianGrid, Toolti
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import * as LucideIcons from 'lucide-react';
-import { Users, Briefcase, Ticket, Clock, LogOut, BarChart2, Settings, UserCog, Building, FileText, PlusCircle, Edit, Trash2, Film, ChevronLeft, ChevronRight, Menu, Icon as IconType, Monitor } from 'lucide-react';
+import { Users, Briefcase, Ticket, Clock, LogOut, BarChart2, Settings, UserCog, Building, FileText, PlusCircle, Edit, Trash2, Film, ChevronLeft, ChevronRight, Menu, Icon as IconType, Monitor, Calendar as CalendarIcon, Download, Loader2 } from 'lucide-react';
+import { format, differenceInMinutes, formatDistanceStrict } from 'date-fns';
+import { id as localeID } from 'date-fns/locale';
+import * as XLSX from 'xlsx';
+import { DateRange } from 'react-day-picker';
+
 
 import QNextLogo from '@/components/icons/q-next-logo';
 import { useQueue } from '@/context/queue-context';
-import type { Staff, Counter, Service, User } from '@/context/queue-context';
+import type { Staff, Counter, Service, User, ReportTicket } from '@/context/queue-context';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
@@ -25,6 +30,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { ScrollArea } from '@/components/ui/scroll-area';
 import Link from 'next/link';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Calendar } from '@/components/ui/calendar';
 
 const chartData = [
   { name: '09:00', 'Layanan Konsultasi': 12, 'Pengajuan Perizinan': 20, 'Layanan Prioritas': 5 },
@@ -586,7 +592,7 @@ const ServiceForm = ({ service, onSave, closeDialog }: { service?: Service | nul
             <div className="space-y-2">
                 <Label>Dapat Dilayani di Loket</Label>
                 <div className="grid grid-cols-3 gap-2">
-                    {counters && counters.map(counter => (
+                    {counters && Array.isArray(counters) && counters.map(counter => (
                         <div key={counter.id} className="flex items-center gap-2">
                             <input
                                 type="checkbox"
@@ -777,18 +783,210 @@ const VideoTab = () => {
 
 
 const ReportTab = () => {
+    const { getReportData } = useQueue();
+    const { toast } = useToast();
+    const [date, setDate] = React.useState<DateRange | undefined>({
+        from: new Date(new Date().setDate(new Date().getDate() - 7)),
+        to: new Date(),
+    });
+    const [reportData, setReportData] = React.useState<ReportTicket[]>([]);
+    const [isLoading, setIsLoading] = React.useState(false);
+    const [summary, setSummary] = React.useState<{ total: number, avgWait: number, avgServe: number } | null>(null);
+
+    const handleGenerateReport = async () => {
+        if (!date?.from || !date?.to) {
+            toast({ variant: 'warning', title: 'Perhatian', description: 'Silakan pilih rentang tanggal terlebih dahulu.' });
+            return;
+        }
+        setIsLoading(true);
+        setReportData([]);
+        setSummary(null);
+        try {
+            const data = await getReportData(date.from, date.to);
+            setReportData(data);
+            if(data.length > 0) {
+                calculateSummary(data);
+                toast({ variant: 'success', title: 'Sukses', description: `Laporan berhasil dibuat dengan ${data.length} data.` });
+            } else {
+                toast({ variant: 'warning', title: 'Info', description: 'Tidak ada data yang ditemukan untuk rentang tanggal yang dipilih.' });
+            }
+        } catch (error) {
+            console.error(error);
+            toast({ variant: 'destructive', title: 'Error', description: 'Gagal membuat laporan.' });
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const calculateSummary = (data: ReportTicket[]) => {
+        const servedTickets = data.filter(t => t.status === 'done' && t.calledAt && t.completedAt);
+        const totalWaitTime = servedTickets.reduce((acc, t) => acc + (t.calledAt!.getTime() - t.timestamp.getTime()), 0);
+        const totalServeTime = servedTickets.reduce((acc, t) => acc + (t.completedAt!.getTime() - t.calledAt!.getTime()), 0);
+
+        setSummary({
+            total: data.length,
+            avgWait: servedTickets.length > 0 ? (totalWaitTime / servedTickets.length) / (1000 * 60) : 0,
+            avgServe: servedTickets.length > 0 ? (totalServeTime / servedTickets.length) / (1000 * 60) : 0,
+        });
+    };
+
+    const formatDuration = (start: Date, end: Date) => {
+        if (!start || !end) return '-';
+        return formatDistanceStrict(end, start, { locale: localeID });
+    };
+
+    const handleDownload = () => {
+        const dataToExport = reportData.map(ticket => ({
+            "Nomor Tiket": ticket.number,
+            "Layanan": ticket.serviceName,
+            "Status": ticket.status,
+            "Waktu Ambil": ticket.timestamp ? format(ticket.timestamp, 'dd/MM/yyyy HH:mm:ss') : '-',
+            "Waktu Panggil": ticket.calledAt ? format(ticket.calledAt, 'dd/MM/yyyy HH:mm:ss') : '-',
+            "Waktu Selesai": ticket.completedAt ? format(ticket.completedAt, 'dd/MM/yyyy HH:mm:ss') : '-',
+            "Waktu Tunggu (menit)": ticket.calledAt ? differenceInMinutes(ticket.calledAt, ticket.timestamp) : 0,
+            "Durasi Layanan (menit)": ticket.calledAt && ticket.completedAt ? differenceInMinutes(ticket.completedAt, ticket.calledAt) : 0,
+            "Dilayani oleh": ticket.servedBy,
+            "Loket": ticket.counter,
+        }));
+
+        const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, 'Laporan Antrian');
+        XLSX.writeFile(workbook, `Laporan_Antrian_${format(date?.from || new Date(), 'yyyy-MM-dd')}_${format(date?.to || new Date(), 'yyyy-MM-dd')}.xlsx`);
+    };
+
     return (
-        <Card>
-            <CardHeader>
-                <CardTitle>Laporan</CardTitle>
-                <CardDescription>Lihat dan ekspor laporan antrian.</CardDescription>
-            </CardHeader>
-            <CardContent>
-                <p>Fitur laporan akan segera tersedia.</p>
-            </CardContent>
-        </Card>
-    )
-}
+        <div className="space-y-6">
+            <Card>
+                <CardHeader>
+                    <CardTitle>Laporan Sistem Antrian</CardTitle>
+                    <CardDescription>Pilih rentang tanggal untuk melihat riwayat dan statistik antrian.</CardDescription>
+                </CardHeader>
+                <CardContent className="flex flex-col sm:flex-row gap-4 items-center">
+                    <Popover>
+                        <PopoverTrigger asChild>
+                        <Button
+                            id="date"
+                            variant={"outline"}
+                            className={cn(
+                            "w-[300px] justify-start text-left font-normal",
+                            !date && "text-muted-foreground"
+                            )}
+                        >
+                            <CalendarIcon className="mr-2 h-4 w-4" />
+                            {date?.from ? (
+                            date.to ? (
+                                <>
+                                {format(date.from, "LLL dd, y")} -{" "}
+                                {format(date.to, "LLL dd, y")}
+                                </>
+                            ) : (
+                                format(date.from, "LLL dd, y")
+                            )
+                            ) : (
+                            <span>Pilih tanggal</span>
+                            )}
+                        </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                        <Calendar
+                            initialFocus
+                            mode="range"
+                            defaultMonth={date?.from}
+                            selected={date}
+                            onSelect={setDate}
+                            numberOfMonths={2}
+                        />
+                        </PopoverContent>
+                    </Popover>
+                    <Button onClick={handleGenerateReport} disabled={isLoading}>
+                        {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                        {isLoading ? 'Membuat Laporan...' : 'Buat Laporan'}
+                    </Button>
+                    {reportData.length > 0 && (
+                         <Button variant="outline" onClick={handleDownload} className="ml-auto">
+                            <Download className="mr-2 h-4 w-4"/>
+                            Unduh Laporan (Excel)
+                        </Button>
+                    )}
+                </CardContent>
+            </Card>
+
+            {summary && (
+                <div className="grid gap-6 md:grid-cols-3">
+                    <Card>
+                        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                            <CardTitle className="text-sm font-medium">Total Tiket</CardTitle>
+                            <Ticket className="h-4 w-4 text-muted-foreground" />
+                        </CardHeader>
+                        <CardContent>
+                            <div className="text-2xl font-bold">{summary.total}</div>
+                        </CardContent>
+                    </Card>
+                     <Card>
+                        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                            <CardTitle className="text-sm font-medium">Rata-rata Waktu Tunggu</CardTitle>
+                            <Clock className="h-4 w-4 text-muted-foreground" />
+                        </CardHeader>
+                        <CardContent>
+                            <div className="text-2xl font-bold">{summary.avgWait.toFixed(2)} menit</div>
+                        </CardContent>
+                    </Card>
+                     <Card>
+                        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                            <CardTitle className="text-sm font-medium">Rata-rata Waktu Pelayanan</CardTitle>
+                            <Briefcase className="h-4 w-4 text-muted-foreground" />
+                        </CardHeader>
+                        <CardContent>
+                            <div className="text-2xl font-bold">{summary.avgServe.toFixed(2)} menit</div>
+                        </CardContent>
+                    </Card>
+                </div>
+            )}
+
+            {reportData.length > 0 && (
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Detail Laporan</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <ScrollArea className="h-[500px]">
+                        <Table>
+                            <TableHeader className="sticky top-0 bg-card">
+                                <TableRow>
+                                    <TableHead>No. Tiket</TableHead>
+                                    <TableHead>Layanan</TableHead>
+                                    <TableHead>Waktu Ambil</TableHead>
+                                    <TableHead>Waktu Tunggu</TableHead>
+                                    <TableHead>Durasi Layanan</TableHead>
+                                    <TableHead>Petugas</TableHead>
+                                    <TableHead>Loket</TableHead>
+                                    <TableHead>Status</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {reportData.map(ticket => (
+                                    <TableRow key={ticket.id}>
+                                        <TableCell className="font-medium">{ticket.number}</TableCell>
+                                        <TableCell>{ticket.serviceName}</TableCell>
+                                        <TableCell>{format(ticket.timestamp, 'HH:mm:ss')}</TableCell>
+                                        <TableCell>{ticket.calledAt ? formatDuration(ticket.timestamp, ticket.calledAt) : '-'}</TableCell>
+                                        <TableCell>{(ticket.calledAt && ticket.completedAt) ? formatDuration(ticket.calledAt, ticket.completedAt) : '-'}</TableCell>
+                                        <TableCell>{ticket.servedBy || '-'}</TableCell>
+                                        <TableCell>{ticket.counter || '-'}</TableCell>
+                                        <TableCell className="capitalize">{ticket.status}</TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                        </ScrollArea>
+                    </CardContent>
+                </Card>
+            )}
+        </div>
+    );
+};
+
 
 const navItems = [
     { id: 'dashboard', label: 'Dasbor', icon: BarChart2, action: (setActiveTab: Function) => setActiveTab('dashboard') },

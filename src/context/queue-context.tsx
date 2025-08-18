@@ -3,7 +3,7 @@
 import type { ReactNode } from 'react';
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { db, app } from '@/lib/firebase';
-import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
+import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword } from 'firebase/auth';
 import { 
     collection, 
     onSnapshot, 
@@ -41,6 +41,20 @@ export interface Ticket {
   timestamp: Date;
   status: 'waiting' | 'serving' | 'done' | 'skipped';
 }
+
+export interface ReportTicket {
+  id: string;
+  number: string;
+  serviceId: string;
+  serviceName: string;
+  timestamp: Date;
+  calledAt?: Date;
+  completedAt?: Date;
+  status: 'waiting' | 'serving' | 'done' | 'skipped';
+  servedBy?: string;
+  counter?: number;
+}
+
 
 export interface ServingInfo {
   ticket: Ticket;
@@ -80,10 +94,15 @@ interface TicketDoc {
     timestamp: Timestamp;
     status: 'waiting' | 'serving' | 'done' | 'skipped';
     number: string;
+    calledAt?: Timestamp;
+    completedAt?: Timestamp;
+    servedBy?: string; // staff name
+    counter?: number;
 }
 interface NowServingDoc {
     ticketId: string;
     counter: number;
+    staffId: string;
 }
 interface ServiceDoc {
     name:string;
@@ -125,6 +144,7 @@ interface QueueContextType {
   updateService: (service: Service) => Promise<void>;
   deleteService: (serviceId: string) => Promise<void>;
   updateVideoUrl: (url: string) => Promise<void>;
+  getReportData: (startDate: Date, endDate: Date) => Promise<ReportTicket[]>;
 }
 
 const QueueContext = createContext<QueueContextType | undefined>(undefined);
@@ -409,6 +429,8 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
 
   const callNextTicket = async (serviceId: string, counter: number) => {
     try {
+      if (!state.currentUser) throw new Error("User not authenticated");
+
       const waitingTickets = state.tickets.filter(t => t.serviceId === serviceId && t.status === 'waiting');
       
       if (waitingTickets.length === 0) {
@@ -416,18 +438,27 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
         return;
       }
       
-      // Sorting is implicitly handled by Firestore query order, but we can sort here to be safe
       const nextTicket = waitingTickets.sort((a,b) => a.timestamp.getTime() - b.timestamp.getTime())[0];
 
       const batch = writeBatch(db);
-      batch.update(doc(db, 'tickets', nextTicket.id), { status: 'serving' });
+      const ticketRef = doc(db, 'tickets', nextTicket.id);
+      batch.update(ticketRef, { 
+          status: 'serving',
+          calledAt: serverTimestamp(),
+          servedBy: state.currentUser.name,
+          counter,
+      });
 
       const nowServingSnapshot = await getDocs(collection(db, 'nowServing'));
       nowServingSnapshot.forEach(doc => batch.delete(doc.ref));
       
       const nowServingCol = collection(db, 'nowServing');
       const nowServingRef = doc(nowServingCol);
-      batch.set(nowServingRef, { ticketId: nextTicket.id, counter });
+      batch.set(nowServingRef, { 
+          ticketId: nextTicket.id, 
+          counter, 
+          staffId: state.currentUser.uid 
+        });
       
       await batch.commit();
       toast({ title: "Memanggil Antrian", description: `Nomor ${nextTicket.number} dipanggil ke loket ${counter}.`})
@@ -448,7 +479,10 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
   
   const completeTicket = async (ticketId: string) => {
     try {
-        await updateDoc(doc(db, 'tickets', ticketId), { status: 'done' });
+        await updateDoc(doc(db, 'tickets', ticketId), { 
+            status: 'done',
+            completedAt: serverTimestamp()
+        });
         await clearServingAndRecall();
         toast({ variant: "success", title: "Layanan Selesai", description: "Antrian telah selesai dilayani."});
 
@@ -472,21 +506,11 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
   
   const recallTicket = (ticketId: string) => {
     setState(prevState => ({...prevState, recallInfo: { ticketId, timestamp: Date.now() }}))
-    // This is now primarily a UI action to trigger a visual cue on the monitor.
-    // No toast needed as it's a silent action.
     console.log("Recalling ticket:", ticketId);
   };
 
   // --- Admin Functions ---
   const addStaff = async (userData: any) => {
-    // IMPORTANT: Using `createUserWithEmailAndPassword` client-side to create a new user
-    // will automatically sign in the newly created user and sign out the current user (the admin).
-    // For a production environment, user creation should be done securely on a trusted
-    // backend environment (e.g., using Firebase Admin SDK in Cloud Functions) to prevent
-    // the admin from being logged out and for better security practices.
-    // This function creates the user. The client-side SDK call will sign in the
-    // new user and sign out the current admin. The calling component handles the UI
-    // feedback for this.
     const { email, password, name, role, counters } = userData;
     try {
         const newUserCredential = await createUserWithEmailAndPassword(auth, email, password);
@@ -504,7 +528,6 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
         await batch.commit();
         
     } catch (error: any) {
-        // Re-throw the error to be caught in the component
         console.error("Error in addStaff:", error);
         throw error;
     }
@@ -521,20 +544,13 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
   }
 
   const deleteStaff = async (staffId: string) => {
-      // IMPORTANT: This function ONLY deletes the user's data from Firestore (staff and users collections).
-      // It does NOT delete the user from Firebase Authentication.
-      // Deleting a user from Firebase Authentication requires a trusted server
-      // environment (e.g., a Firebase Cloud Function) using the Firebase Admin SDK
-      // for security reasons.
-      // In a production application, implement a backend function to handle
-      // complete user deletion, including the Firebase Authentication user.
       try {
         const batch = writeBatch(db);
         batch.delete(doc(db, 'staff', staffId));
         batch.delete(doc(db, 'users', staffId));
         await batch.commit();
         console.warn(`User with UID ${staffId} deleted from Firestore, but not from Firebase Auth.`);
-      } catch (error) {
+      } catch (error: any) {
         throw new Error(`Gagal menghapus data pengguna dari database: ${error.message}`);
       }
   }
@@ -578,7 +594,6 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
         const serviceRef = doc(db, 'services', serviceId);
         batch.delete(serviceRef);
 
-        // Also delete the daily counter associated with it to keep things clean
         const todayStr = new Date().toISOString().split('T')[0];
         const dailyCounterRef = doc(db, 'daily_counters', `${serviceId}_${todayStr}`);
         const dailyCounterSnap = await getDoc(dailyCounterRef);
@@ -600,9 +615,45 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
     await setDoc(settingsRef, { videoUrl: url }, { merge: true });
   }
 
+  const getReportData = async (startDate: Date, endDate: Date): Promise<ReportTicket[]> => {
+    const startOfDay = new Date(startDate);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(endDate);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    const q = query(
+        collection(db, 'tickets'), 
+        where('timestamp', '>=', startOfDay), 
+        where('timestamp', '<=', endOfDay),
+        orderBy('timestamp', 'asc')
+    );
+
+    const querySnapshot = await getDocs(q);
+    const reportTickets: ReportTicket[] = [];
+
+    querySnapshot.forEach(docSnap => {
+        const data = docSnap.data() as TicketDoc;
+        const service = state.services.find(s => s.id === data.serviceId);
+        reportTickets.push({
+            id: docSnap.id,
+            number: data.number,
+            serviceId: data.serviceId,
+            serviceName: service?.name || 'Unknown',
+            timestamp: data.timestamp.toDate(),
+            calledAt: data.calledAt?.toDate(),
+            completedAt: data.completedAt?.toDate(),
+            status: data.status,
+            servedBy: data.servedBy,
+            counter: data.counter,
+        });
+    });
+
+    return reportTickets;
+  }
+
 
   return (
-    <QueueContext.Provider value={{ state, loginUser, logoutUser, addTicket, callNextTicket, completeTicket, skipTicket, recallTicket, addStaff, updateStaff, deleteStaff, addCounter, updateCounter, deleteCounter, addService, updateService, deleteService, updateVideoUrl }}>
+    <QueueContext.Provider value={{ state, loginUser, logoutUser, addTicket, callNextTicket, completeTicket, skipTicket, recallTicket, addStaff, updateStaff, deleteStaff, addCounter, updateCounter, deleteCounter, addService, updateService, deleteService, updateVideoUrl, getReportData }}>
       {children}
     </QueueContext.Provider>
   );
