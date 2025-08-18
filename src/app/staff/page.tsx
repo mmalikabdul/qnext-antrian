@@ -163,9 +163,9 @@ export default function StaffPage() {
     }
   }
 
-  const handleRecall = () => {
+  const handleRecall = async () => {
     if (currentServingTicket) {
-      recallTicket(currentServingTicket.id);
+      await recallTicket(currentServingTicket.id);
       toast({ title: "Memanggil Ulang", description: `Nomor antrian ${currentServingTicket.number} dipanggil ulang.` });
     }
   };

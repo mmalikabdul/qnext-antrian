@@ -145,7 +145,7 @@ interface QueueContextType {
   callNextTicket: (serviceId: string, counter: number) => Promise<void>;
   completeTicket: (ticketId: string) => Promise<void>;
   skipTicket: (ticketId: string) => Promise<void>;
-  recallTicket: (ticketId: string) => void;
+  recallTicket: (ticketId: string) => Promise<void>;
   addStaff: (staffData: any) => Promise<void>;
   updateStaff: (staff: Staff) => Promise<void>;
   deleteStaff: (staffId: string) => Promise<void>;
@@ -394,6 +394,25 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
     return () => unsubscribe();
   }, [state.tickets]); // Rerun when tickets change
 
+    // Subscribe to Recall triggers
+    useEffect(() => {
+        const q = query(collection(db, "recall"));
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            snapshot.docChanges().forEach((change) => {
+                if (change.type === "added") {
+                    const data = change.doc.data();
+                    setState(prevState => ({
+                        ...prevState,
+                        recallInfo: { ticketId: data.ticketId, timestamp: Date.now() }
+                    }));
+                    // Delete the document immediately to prevent re-triggering
+                    deleteDoc(doc(db, "recall", change.doc.id));
+                }
+            });
+        });
+        return () => unsubscribe();
+    }, []);
+
 
   const addTicket = async (service: Service): Promise<Ticket | null> => {
     try {
@@ -524,9 +543,18 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
     }
   };
   
-  const recallTicket = (ticketId: string) => {
-    setState(prevState => ({...prevState, recallInfo: { ticketId, timestamp: Date.now() }}))
-    console.log("Recalling ticket:", ticketId);
+  const recallTicket = async (ticketId: string) => {
+    try {
+      // Create a temporary document in 'recall' collection to trigger the listener
+      await addDoc(collection(db, "recall"), {
+        ticketId: ticketId,
+        timestamp: serverTimestamp(),
+      });
+      // The listener in useEffect will handle deleting this doc
+    } catch (error) {
+      console.error("Error recalling ticket:", error);
+      toast({ variant: 'destructive', title: 'Error', description: 'Gagal memanggil ulang tiket.'});
+    }
   };
 
   // --- Admin Functions ---
