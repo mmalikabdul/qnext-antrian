@@ -219,6 +219,7 @@ const StaffTab = () => {
     const { state: { staff, counters, users, currentUser }, addStaff, updateStaff, deleteStaff, logoutUser } = useQueue();
     const [isAddOpen, setIsAddOpen] = React.useState(false);
     const [editingStaff, setEditingStaff] = React.useState<(Staff & User) | null>(null);
+    const [showSuccessAlert, setShowSuccessAlert] = React.useState(false);
     const { toast } = useToast();
     const router = useRouter();
     const auth = getAuth(app);
@@ -245,19 +246,8 @@ const StaffTab = () => {
                 }
                 
                 await addStaff(data);
-                
-                toast({ 
-                    variant: "success",
-                    title: "Sukses", 
-                    description: "Pengguna baru berhasil ditambahkan. Anda akan dialihkan ke halaman login." 
-                });
                 setIsAddOpen(false);
-
-                // Due to Firebase SDK limitations, admin will be logged out. 
-                // We manually sign them out from the app state and redirect to login.
-                await auth.signOut();
-                logoutUser();
-                router.push('/login');
+                setShowSuccessAlert(true);
             }
         } catch(e: any) {
             console.error("Failed to save staff:", e);
@@ -266,6 +256,13 @@ const StaffTab = () => {
                 : `Gagal menyimpan data pengguna: ${e.message}`;
             toast({ variant: "destructive", title: "Error", description: message });
         }
+    }
+    
+    const handleSuccessAlertClose = async () => {
+        setShowSuccessAlert(false);
+        await auth.signOut();
+        logoutUser();
+        router.push('/login');
     }
 
     const handleDeleteStaff = async (id: string) => {
@@ -282,6 +279,7 @@ const StaffTab = () => {
     }
 
     return (
+        <>
         <Card>
             <CardHeader className="flex flex-row items-center justify-between">
                 <div>
@@ -355,6 +353,22 @@ const StaffTab = () => {
                 </Table>
             </CardContent>
         </Card>
+
+        <AlertDialog open={showSuccessAlert} onOpenChange={setShowSuccessAlert}>
+            <AlertDialogContent>
+                <AlertDialogHeader>
+                    <AlertDialogTitle>Pengguna Baru Berhasil Dibuat</AlertDialogTitle>
+                    <AlertDialogDescription>
+                        Anda akan otomatis logout dari sesi admin. Silakan login kembali untuk melanjutkan.
+                    </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                    <AlertDialogAction onClick={handleSuccessAlertClose}>OK</AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
+
+        </>
     );
 }
 
