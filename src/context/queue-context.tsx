@@ -161,17 +161,42 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
             // Check if this user object is already the current user to avoid redundant fetches
             if (state.currentUser && user.uid === state.currentUser.uid) {
                 setState(prevState => ({...prevState, authLoaded: true}));
+
                 return;
             }
-            
+
             const userDocRef = doc(db, 'users', user.uid);
-            const userDocSnap = await getDoc(userDocRef);
+            let userDocSnap = await getDoc(userDocRef);
+
+            // Add retry mechanism in case Firestore write is delayed
+            const maxRetries = 5;
+            const retryDelayMs = 200;
+            let retries = 0;
+
+            while (!userDocSnap.exists() && retries < maxRetries) {
+                console.log(`User document not found for ${user.uid}, retrying... Attempt ${retries + 1}/${maxRetries}`);
+                await new Promise(resolve => setTimeout(resolve, retryDelayMs));
+                userDocSnap = await getDoc(userDocRef);
+                retries++;
+            }
+
             if (userDocSnap.exists()) {
                 const userData = userDocSnap.data() as Omit<User, 'uid'>;
+
                 const staffDocRef = doc(db, 'staff', user.uid);
-                const staffDocSnap = await getDoc(staffDocRef);
+                let staffDocSnap = await getDoc(staffDocRef);
+
+                // Add retry mechanism for staff doc as well
+                retries = 0; // Reset retries for staff doc
+                while (userData.role === 'staff' && !staffDocSnap.exists() && retries < maxRetries) {
+                    console.log(`Staff document not found for ${user.uid}, retrying... Attempt ${retries + 1}/${maxRetries}`);
+                    await new Promise(resolve => setTimeout(resolve, retryDelayMs));
+                    staffDocSnap = await getDoc(staffDocRef);
+                    retries++;
+                }
+
                 const staffData = staffDocSnap.exists() ? staffDocSnap.data() as Omit<Staff, 'id'> : { name: userData.email, counters: [] };
-                
+
                 setState(prevState => ({ ...prevState, currentUser: { uid: user.uid, ...userData, ...staffData }, authLoaded: true }));
             } else {
                  setState(prevState => ({ ...prevState, currentUser: null, authLoaded: true }));
@@ -454,6 +479,11 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
 
   // --- Admin Functions ---
   const addStaff = async (userData: any) => {
+    // IMPORTANT: Using `createUserWithEmailAndPassword` client-side to create a new user
+    // will automatically sign in the newly created user and sign out the current user (the admin).
+    // For a production environment, user creation should be done securely on a trusted
+    // backend environment (e.g., using Firebase Admin SDK in Cloud Functions) to prevent
+    // the admin from being logged out and for better security practices.
     // This function creates the user. The client-side SDK call will sign in the
     // new user and sign out the current admin. The calling component handles the UI
     // feedback for this.
@@ -491,10 +521,13 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
   }
 
   const deleteStaff = async (staffId: string) => {
-      // This is complex because it requires deleting a Firebase Auth user,
-      // which should be done via a backend function (e.g., Cloud Function) for security.
-      // For this demo, we'll just delete the Firestore documents.
-      // The auth user will remain, but will be an orphan.
+      // IMPORTANT: This function ONLY deletes the user's data from Firestore (staff and users collections).
+      // It does NOT delete the user from Firebase Authentication.
+      // Deleting a user from Firebase Authentication requires a trusted server
+      // environment (e.g., a Firebase Cloud Function) using the Firebase Admin SDK
+      // for security reasons.
+      // In a production application, implement a backend function to handle
+      // complete user deletion, including the Firebase Authentication user.
       try {
         const batch = writeBatch(db);
         batch.delete(doc(db, 'staff', staffId));
@@ -502,8 +535,7 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
         await batch.commit();
         console.warn(`User with UID ${staffId} deleted from Firestore, but not from Firebase Auth.`);
       } catch (error) {
-          console.error("Error deleting staff data:", error);
-          throw new Error("Gagal menghapus data pengguna dari database.");
+        throw new Error(`Gagal menghapus data pengguna dari database: ${error.message}`);
       }
   }
 

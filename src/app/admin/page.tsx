@@ -257,15 +257,13 @@ const StaffTab = () => {
     
     const handleSuccessAlertClose = () => {
         setShowSuccessAlert(false);
-        // The context handles the sign out, here we just redirect
-        logoutUser(); // Clear user from local state
-        router.push('/login');
+        // Keep the user logged in
     }
 
     const handleDeleteStaff = async (id: string) => {
         try {
             await deleteStaff(id);
-            toast({ variant: "success", title: "Sukses", description: "Pengguna berhasil dihapus." });
+            toast({ variant: "success", title: "Sukses", description: "Data pengguna berhasil dihapus dari aplikasi." });
         } catch(e: any) {
             toast({ variant: "destructive", title: "Error", description: `Gagal menghapus pengguna. ${e.message}` });
         }
@@ -335,11 +333,13 @@ const StaffTab = () => {
                                         <AlertDialogContent>
                                             <AlertDialogHeader>
                                                 <AlertDialogTitle>Anda yakin?</AlertDialogTitle>
-                                                <AlertDialogDescription>Tindakan ini akan menghapus akun login dan data pengguna secara permanen.</AlertDialogDescription>
+                                                <AlertDialogDescription>
+                                                    Tindakan ini hanya akan menghapus data pengguna dari aplikasi ini. Akun login pengguna di Firebase Authentication **TIDAK AKAN DIHAPUS**. Anda perlu menghapusnya secara manual melalui Firebase Console.
+                                                </AlertDialogDescription>
                                             </AlertDialogHeader>
                                             <AlertDialogFooter>
                                                 <AlertDialogCancel>Batal</AlertDialogCancel>
-                                                <AlertDialogAction onClick={() => handleDeleteStaff(s.id)}>Hapus</AlertDialogAction>
+                                                <AlertDialogAction onClick={() => handleDeleteStaff(s.id)}>Hapus dari Aplikasi</AlertDialogAction>
                                             </AlertDialogFooter>
                                         </AlertDialogContent>
                                     </AlertDialog>
