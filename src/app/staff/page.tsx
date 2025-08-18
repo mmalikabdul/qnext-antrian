@@ -57,9 +57,11 @@ export default function StaffPage() {
         router.push('/login');
     }
     if (currentUser && currentUser.counters && currentUser.counters.length > 0) {
-        setActiveCounterId(currentUser.counters[0]);
+        if (!activeCounterId) {
+            setActiveCounterId(currentUser.counters[0]);
+        }
     }
-  }, [currentUser, authLoaded, router]);
+  }, [currentUser, authLoaded, router, activeCounterId]);
   
   const staffCounters = React.useMemo(() => {
     return counters.filter(c => currentUser?.counters?.includes(c.id));
@@ -89,7 +91,7 @@ export default function StaffPage() {
 
     const myHandledTickets = tickets
       .filter(t => (t.status === 'done' || t.status === 'skipped') && t.servedBy === currentUser.name)
-      .sort((a, b) => (b.completedAt?.getTime() || 0) - (a.completedAt?.getTime() || 0));
+      .sort((a, b) => (b.completedAt?.getTime() || b.calledAt?.getTime() || 0) - (a.completedAt?.getTime() || a.calledAt?.getTime() || 0));
     
     const servedTickets = myHandledTickets.filter(t => t.status === 'done');
     const skippedTickets = myHandledTickets.filter(t => t.status === 'skipped');

@@ -111,11 +111,6 @@ interface TicketDoc {
     servedBy?: string; // staff name
     counter?: number;
 }
-interface NowServingDoc {
-    ticketId: string;
-    counter: number;
-    staffId: string;
-}
 interface ServiceDoc {
     name:string;
     servingCounters: number[];
@@ -354,45 +349,23 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
             service: {} as Service
         });
       });
-      setState(prevState => ({...prevState, tickets: enrichTickets(tickets, prevState.services)}));
+
+      const enriched = enrichTickets(tickets, state.services);
+      const servingTicket = enriched.find(t => t.status === 'serving');
+      const nowServing = servingTicket && servingTicket.counter ? { ticket: servingTicket, counter: servingTicket.counter } : null;
+
+      setState(prevState => ({
+          ...prevState, 
+          tickets: enriched,
+          nowServing
+      }));
+
     }, (error) => {
       console.error("Error fetching tickets:", error);
     });
     return () => unsubscribe();
   }, [state.services]);
 
-  // Subscribe to Now Serving
-  useEffect(() => {
-    if (state.tickets.length === 0 && state.nowServing !== null) {
-        // Clear nowServing if there are no tickets at all
-        setState(prevState => ({ ...prevState, nowServing: null }));
-        return;
-    };
-  
-    const q = query(collection(db, 'nowServing'), limit(1));
-    const unsubscribe = onSnapshot(q, (querySnapshot) => {
-      if (querySnapshot.empty) {
-        setState(prevState => ({ ...prevState, nowServing: null }));
-        return;
-      }
-      const nowServingDoc = querySnapshot.docs[0].data() as NowServingDoc;
-      const servingTicket = state.tickets.find(t => t.id === nowServingDoc.ticketId);
-
-      if (servingTicket) {
-        const nowServing: ServingInfo = { ticket: servingTicket, counter: nowServingDoc.counter };
-        setState(prevState => {
-            const history = [nowServing, ...(prevState.servingHistory || [])].filter((v,i,a)=>a.findIndex(t=>(t.ticket.id === v.ticket.id))===i).slice(0,5);
-            return { ...prevState, nowServing, servingHistory: history };
-        });
-      } else {
-         // This can happen if the ticket was just completed/deleted
-         setState(prevState => ({ ...prevState, nowServing: null }));
-      }
-    }, (error) => {
-      console.error("Error fetching nowServing:", error);
-    });
-    return () => unsubscribe();
-  }, [state.tickets]); // Rerun when tickets change
 
     // Subscribe to Recall triggers
     useEffect(() => {
@@ -475,41 +448,20 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
       
       const nextTicket = waitingTickets.sort((a,b) => a.timestamp.getTime() - b.timestamp.getTime())[0];
 
-      const batch = writeBatch(db);
       const ticketRef = doc(db, 'tickets', nextTicket.id);
-      batch.update(ticketRef, { 
+      await updateDoc(ticketRef, { 
           status: 'serving',
           calledAt: serverTimestamp(),
           servedBy: state.currentUser.name,
           counter,
       });
-
-      const nowServingSnapshot = await getDocs(collection(db, 'nowServing'));
-      nowServingSnapshot.forEach(doc => batch.delete(doc.ref));
       
-      const nowServingCol = collection(db, 'nowServing');
-      const nowServingRef = doc(nowServingCol);
-      batch.set(nowServingRef, { 
-          ticketId: nextTicket.id, 
-          counter, 
-          staffId: state.currentUser.uid 
-        });
-      
-      await batch.commit();
       toast({ title: "Memanggil Antrian", description: `Nomor ${nextTicket.number} dipanggil ke loket ${counter}.`})
 
     } catch (error) {
         console.error("Error calling next ticket: ", error);
         toast({ variant: 'destructive', title: 'Error', description: 'Gagal memanggil tiket berikutnya.'});
     }
-  };
-
-  const clearServingAndRecall = async () => {
-    const batch = writeBatch(db);
-    const nowServingSnapshot = await getDocs(collection(db, 'nowServing'));
-    nowServingSnapshot.forEach(doc => batch.delete(doc.ref));
-    await batch.commit();
-    setState(prevState => ({ ...prevState, nowServing: null, recallInfo: null }));
   };
   
   const completeTicket = async (ticketId: string) => {
@@ -518,7 +470,6 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
             status: 'done',
             completedAt: serverTimestamp()
         });
-        await clearServingAndRecall();
         toast({ variant: "success", title: "Layanan Selesai", description: "Antrian telah selesai dilayani."});
 
     } catch (error) {
@@ -531,10 +482,8 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
     try {
         await updateDoc(doc(db, 'tickets', ticketId), { 
             status: 'skipped',
-            // Keep servedBy to attribute the skip, but also mark completion time
             completedAt: serverTimestamp() 
         });
-        await clearServingAndRecall();
         toast({ variant: "warning", title: "Antrian Dilewati", description: "Antrian telah ditandai sebagai dilewati."});
 
     } catch (error) {
