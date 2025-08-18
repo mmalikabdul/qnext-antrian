@@ -118,8 +118,19 @@ export default function MonitorPage() {
     setIsRecalling(true);
     const timer = setTimeout(() => setIsRecalling(false), 2000); // Visual cue for 2s
 
-    const textToSpeak = `Panggilan ulang untuk, nomor antrian, ${ticket.number.split('').join(' ')}, silahkan menuju, ke loket, ${counter}`;
-    speak(textToSpeak);
+    const audio = audioRef.current;
+    if (audio) {
+        const handleAudioEnd = () => {
+            const textToSpeak = `Panggilan ulang untuk, nomor antrian, ${ticket.number.split('').join(' ')}, silahkan menuju, ke loket, ${counter}`;
+            speak(textToSpeak);
+            audio.removeEventListener('ended', handleAudioEnd);
+        };
+        audio.addEventListener('ended', handleAudioEnd);
+        audio.play().catch(e => {
+            console.error("Recall audio play failed, falling back to speech only.", e);
+            handleAudioEnd(); // Play speech even if audio fails
+        });
+    }
 
     return () => clearTimeout(timer);
   }, [state.recallInfo, nowServing, speak]);
