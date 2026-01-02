@@ -13,8 +13,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { LogIn, User, KeyRound } from 'lucide-react';
-import QNextLogo from '@/components/icons/q-next-logo';
+import { LogIn, User, KeyRound, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 import { getAuth, signInWithEmailAndPassword } from 'firebase/auth';
 import { app, db } from '@/lib/firebase';
@@ -23,6 +22,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertCircle } from 'lucide-react';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { useQueue } from '@/context/queue-context';
+import Image from 'next/image';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -48,13 +48,20 @@ export default function LoginPage() {
       
       let userRole: 'admin' | 'staff' = 'staff';
 
+      // Ganti string ini dengan email admin yang sebenarnya
+      const ADMIN_EMAIL = 'admin@example.com';
+
       if (userDocSnap.exists()) {
         userRole = userDocSnap.data().role;
+        // Fix: Jika email adalah admin tapi role di database bukan admin, update jadi admin
+        if (user.email === ADMIN_EMAIL && userRole !== 'admin') {
+          userRole = 'admin';
+          await setDoc(userDocRef, { role: 'admin' }, { merge: true });
+        }
       } else {
         // This case should ideally not happen if users are created from admin panel
         // But as a fallback, we create a doc.
-        // TODO: Replace with your default admin email
-        userRole = (user.email === 'admin@example.com') ? 'admin' : 'staff';
+        userRole = (user.email === ADMIN_EMAIL) ? 'admin' : 'staff';
         await setDoc(userDocRef, { email: user.email, role: userRole });
         
         // Also create a staff document
@@ -96,22 +103,24 @@ export default function LoginPage() {
   return (
     <div className="flex items-center justify-center min-h-screen bg-background">
       <div className="absolute top-4 left-4">
-        <Button variant="ghost" asChild>
+        <Button variant="outline" asChild>
           <Link href="/">
-            &larr; Kembali ke Kiosk
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Halaman Utama
           </Link>
         </Button>
       </div>
       <Card className="w-full max-w-md mx-4 shadow-2xl">
         <form onSubmit={handleLogin}>
-          <CardHeader className="text-center space-y-2">
-            <div className="inline-block mx-auto">
-              <QNextLogo className="h-14 w-14 text-primary" />
-            </div>
-            <CardTitle className="text-3xl font-bold">Login Petugas</CardTitle>
-            <CardDescription>
-              Masuk untuk mengelola antrian atau melihat dasbor.
-            </CardDescription>
+          <CardHeader className="space-y-4 p-6">
+             <Image
+                src="/qnext-logo.svg"
+                alt="Qnext Logo"
+                width={200}
+                height={62}
+                className="mx-auto"
+              />
+            <CardTitle className="text-center text-2xl font-bold">Login</CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
             {error && (
@@ -154,7 +163,7 @@ export default function LoginPage() {
               </div>
             </div>
              <p className="text-sm text-muted-foreground text-center">
-                Gunakan akun yang telah didaftarkan oleh Admin.
+                Gunakan akun yang telah didaftarkan.
             </p>
           </CardContent>
           <CardFooter>

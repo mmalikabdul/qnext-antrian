@@ -25,7 +25,6 @@ import {
   List,
   Volume2,
 } from 'lucide-react';
-import QNextLogo from '@/components/icons/q-next-logo';
 import { useToast } from '@/hooks/use-toast';
 import { getAuth } from 'firebase/auth';
 import { app } from '@/lib/firebase';
@@ -35,6 +34,7 @@ import { id as localeID } from 'date-fns/locale';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
+import Image from 'next/image';
 
 
 const getIcon = (iconName: string): React.ComponentType<LucideIcons.LucideProps> => {
@@ -46,7 +46,7 @@ const getIcon = (iconName: string): React.ComponentType<LucideIcons.LucideProps>
 export default function StaffPage() {
   const router = useRouter();
   const { state, callNextTicket, completeTicket, recallTicket, skipTicket, logoutUser } = useQueue();
-  const { tickets, nowServing, services, currentUser, counters, authLoaded } = state;
+  const { tickets, nowServingTickets, services, currentUser, counters, authLoaded } = state;
   const { toast } = useToast();
   const auth = getAuth(app);
   
@@ -67,7 +67,7 @@ export default function StaffPage() {
     return counters.filter(c => currentUser?.counters?.includes(c.id));
   }, [counters, currentUser]);
 
-  const currentServingTicket = nowServing && nowServing.counter === activeCounterId ? nowServing.ticket : null;
+  const currentServingTicket = nowServingTickets.find(info => info.counter === activeCounterId)?.ticket || null;
   
   const servicesForActiveCounter = React.useMemo(() => {
       if (!activeCounterId) return [];
@@ -181,10 +181,16 @@ export default function StaffPage() {
       <header className="bg-card shadow-sm sticky top-0 z-10">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-20">
-            <div className="flex items-center space-x-4">
-              <QNextLogo className="h-10 w-10 text-primary" />
+            <div className="flex items-end space-x-4">
+               <Image
+                  src="/qnext-logo.svg"
+                  alt="Qnext Logo"
+                  width={128}
+                  height={40}
+                  priority
+                />
               <div className="flex flex-col">
-                <h1 className="text-2xl font-bold text-primary tracking-tight">Panel Petugas</h1>
+                <h1 className="text-xl font-bold text-primary tracking-tight -mb-1">Panel Petugas</h1>
                 <p className="text-sm text-muted-foreground">{currentUser.name || currentUser.email}</p>
               </div>
             </div>

@@ -6,7 +6,7 @@ const firebaseConfig = {
   "projectId": "bkpm-q",
   "appId": "1:897076574261:web:f3851e72d1eed71bf9d97c",
   "storageBucket": "bkpm-q.firebasestorage.app",
-  "apiKey": "",
+  "apiKey": "AIzaSyC78V1d5EHb7yvYlBeBzuKFbTaalDebEnE",
   "authDomain": "bkpm-q.firebaseapp.com",
   "messagingSenderId": "897076574261"
 };

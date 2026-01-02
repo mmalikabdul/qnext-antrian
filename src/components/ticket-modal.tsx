@@ -1,66 +1,88 @@
 'use client';
 
-import React from 'react';
+import { useToast } from '@/hooks/use-toast';
+import type { Ticket } from '@/context/queue-context';
 import {
   Dialog,
   DialogContent,
-  DialogHeader,
-  DialogTitle,
   DialogDescription,
   DialogFooter,
+  DialogHeader,
+  DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Ticket, Printer } from 'lucide-react';
+import { Printer } from 'lucide-react';
 
-interface TicketModalProps {
+export interface TicketModalProps {
   isOpen: boolean;
   onClose: () => void;
-  ticketNumber: string;
+  ticket: Ticket | null;
 }
 
-const TicketModal: React.FC<TicketModalProps> = ({
-  isOpen,
-  onClose,
-  ticketNumber,
-}) => {
-  const handlePrint = () => {
-    // In a real app, this would trigger a print action.
-    // For this demo, we'll just log to the console.
-    console.log(`Printing ticket: ${ticketNumber}`);
-    onClose();
+export const TicketModal = ({ isOpen, onClose, ticket }: TicketModalProps) => {
+  const { toast } = useToast();
+
+  const handlePrint = async () => {
+    if (!ticket) return;
+
+    try {
+      const response = await fetch('http://localhost:4000/print', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ticketNumber: ticket.number,
+          serviceName: ticket.service.name,
+          timestamp: ticket.timestamp,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        toast({ title: 'Sukses', description: 'Tiket sedang dicetak.' });
+        onClose();
+      } else {
+        throw new Error(result.message || 'Gagal menghubungi printer.');
+      }
+    } catch (error: any) {
+      console.error('Print error:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Gagal Mencetak',
+        description:
+          'Pastikan aplikasi jembatan cetak (print-bridge) sudah berjalan dan printer terhubung.',
+      });
+    }
   };
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[425px] text-center p-8">
-        <DialogHeader className="text-center flex flex-col items-center">
-          <div className="bg-primary/10 p-4 rounded-full mb-4">
-            <Ticket className="h-12 w-12 text-primary" />
-          </div>
-          <DialogTitle className="text-3xl font-bold">
-            Nomor Antrian Anda
-          </DialogTitle>
-          <DialogDescription className="text-base">
-            Harap simpan nomor antrian Anda.
+      <DialogContent className="sm:max-w-md text-center">
+        <DialogHeader>
+          <DialogTitle className="text-2xl font-bold">Tiket Antrian Anda</DialogTitle>
+          <DialogDescription>
+            Silakan cetak tiket Anda dan tunggu nomor Anda dipanggil.
           </DialogDescription>
         </DialogHeader>
-        <div className="my-8">
-          <p className="text-7xl font-extrabold text-primary tracking-wider">
-            {ticketNumber}
+        <div className="py-6 border-y my-4">
+          <p className="text-lg font-medium text-muted-foreground">{ticket?.service.name}</p>
+          <p className="text-8xl font-extrabold text-primary my-2">{ticket?.number}</p>
+          <p className="text-sm text-muted-foreground">
+            Diambil pada: {ticket?.timestamp.toLocaleTimeString('id-ID')}
           </p>
         </div>
-        <p className="text-muted-foreground">
-          Terima kasih telah menunggu. Anda akan segera kami panggil.
-        </p>
-        <DialogFooter className="sm:justify-center mt-6">
-          <Button type="button" size="lg" onClick={handlePrint} className="w-full sm:w-auto">
-            <Printer className="mr-2 h-4 w-4" />
+        <DialogFooter className="sm:justify-center flex-col sm:flex-col sm:space-x-0 gap-2">
+          <Button type="button" onClick={handlePrint} size="lg">
+            <Printer className="mr-2 h-5 w-5" />
             Cetak Tiket
+          </Button>
+          <Button type="button" onClick={onClose} size="lg" variant="outline">
+            Tutup
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 };
-
-export default TicketModal;
