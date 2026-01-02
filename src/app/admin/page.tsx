@@ -10,7 +10,6 @@ import { Users, Briefcase, Ticket, Clock, LogOut, BarChart2, Settings, UserCog, 
 import { format, differenceInMinutes, formatDistanceStrict } from 'date-fns';
 import { id as localeID } from 'date-fns/locale';
 import * as XLSX from 'xlsx';
-import { DateRange } from 'react-day-picker';
 
 
 import QNextLogo from '@/components/icons/q-next-logo';
@@ -29,9 +28,11 @@ import { cn } from '@/lib/utils';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import Link from 'next/link';
+import { Badge } from '@/components/ui/badge';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Calendar } from '@/components/ui/calendar';
 import { Textarea } from '@/components/ui/textarea';
+import Image from 'next/image';
 
 const chartData = [
   { name: '09:00', 'Layanan Konsultasi': 12, 'Pengajuan Perizinan': 20, 'Layanan Prioritas': 5 },
@@ -44,7 +45,7 @@ const chartData = [
 
 const DashboardTab = () => {
   const { state } = useQueue();
-  const { tickets } = state;
+  const { tickets, nowServingTickets } = state;
 
   const totalTickets = tickets.length;
   const waitingTickets = tickets.filter(t => t.status === 'waiting').length;
@@ -95,29 +96,57 @@ const DashboardTab = () => {
         </Card>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center">
-            <BarChart2 className="mr-2 h-5 w-5" />
-            Statistik Antrian per Jam
-          </CardTitle>
-          <CardDescription>Jumlah antrian yang masuk untuk setiap layanan per jam.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ResponsiveContainer width="100%" height={350}>
-            <BarChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="name" stroke="#555" />
-              <YAxis stroke="#555" />
-              <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--background))', borderColor: 'hsl(var(--border))', borderRadius: 'var(--radius)' }} />
-              <Legend />
-              <Bar dataKey="Layanan Konsultasi" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="Pengajuan Perizinan" fill="hsl(var(--primary) / 0.7)" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="Layanan Prioritas" fill="hsl(var(--accent))" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </CardContent>
-      </Card>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle className="flex items-center">
+              <BarChart2 className="mr-2 h-5 w-5" />
+              Statistik Antrian per Jam
+            </CardTitle>
+            <CardDescription>Jumlah antrian yang masuk untuk setiap layanan per jam.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={350}>
+              <BarChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="name" stroke="#555" />
+                <YAxis stroke="#555" />
+                <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--background))', borderColor: 'hsl(var(--border))', borderRadius: 'var(--radius)' }} />
+                <Legend />
+                <Bar dataKey="Layanan Konsultasi" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="Pengajuan Perizinan" fill="hsl(var(--primary) / 0.7)" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="Layanan Prioritas" fill="hsl(var(--accent))" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+        <Card>
+            <CardHeader>
+                <CardTitle className="flex items-center">
+                    <Users className="mr-2 h-5 w-5" />
+                    Petugas Aktif ({nowServingTickets.length})
+                </CardTitle>
+                <CardDescription>Petugas yang sedang melayani antrian.</CardDescription>
+            </CardHeader>
+            <CardContent>
+                <ScrollArea className="h-[350px]">
+                    {nowServingTickets.length > 0 ? (
+                        <div className="space-y-3 pr-3">
+                            {nowServingTickets.map(info => (
+                                <div key={info.ticket.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                                    <div>
+                                        <p className="font-semibold">{info.ticket.servedBy}</p>
+                                        <p className="text-sm text-muted-foreground">Melayani <span className="font-medium text-primary">{info.ticket.number}</span></p>
+                                    </div>
+                                    <Badge variant="outline">Loket {info.counter}</Badge>
+                                </div>
+                            ))}
+                        </div>
+                    ) : <p className="text-sm text-muted-foreground text-center pt-16">Tidak ada petugas yang sedang melayani.</p>}
+                </ScrollArea>
+            </CardContent>
+        </Card>
+      </div>
     </div>
   );
 };
@@ -226,9 +255,7 @@ const StaffTab = () => {
     const { state: { staff, counters, users, currentUser }, addStaff, updateStaff, deleteStaff, logoutUser } = useQueue();
     const [isAddOpen, setIsAddOpen] = React.useState(false);
     const [editingStaff, setEditingStaff] = React.useState<(Staff & User) | null>(null);
-    const [showSuccessAlert, setShowSuccessAlert] = React.useState(false);
     const { toast } = useToast();
-    const router = useRouter();
     
     const combinedUserData = users.map(u => {
         const staffData = staff.find(s => s.id === u.uid);
@@ -250,8 +277,8 @@ const StaffTab = () => {
                 }
                 
                 await addStaff(data);
+                toast({ variant: "success", title: "Sukses", description: "Pengguna baru berhasil ditambahkan." });
                 setIsAddOpen(false);
-                setShowSuccessAlert(true); // Show success alert instead of toast
             }
         } catch(e: any) {
             console.error("Failed to save staff:", e);
@@ -260,13 +287,6 @@ const StaffTab = () => {
                 : `Gagal menyimpan data pengguna: ${e.message}`;
             toast({ variant: "destructive", title: "Error", description: message });
         }
-    }
-    
-    const handleSuccessAlertClose = () => {
-        setShowSuccessAlert(false);
-        // This will trigger the auth listener in context to re-route
-        logoutUser(); 
-        router.push('/login');
     }
 
     const handleDeleteStaff = async (id: string) => {
@@ -297,9 +317,6 @@ const StaffTab = () => {
                     <DialogContent>
                         <DialogHeader>
                             <DialogTitle>Tambah Pengguna Baru</DialogTitle>
-                            <DialogDescription>
-                                Perhatian: Menambahkan pengguna baru akan membuat sesi admin Anda saat ini berakhir. Anda perlu login kembali setelahnya.
-                            </DialogDescription>
                         </DialogHeader>
                         <StaffForm onSave={handleSaveStaff} closeDialog={() => setIsAddOpen(false)} />
                     </DialogContent>
@@ -359,20 +376,6 @@ const StaffTab = () => {
                 </Table>
             </CardContent>
         </Card>
-
-        <AlertDialog open={showSuccessAlert} onOpenChange={setShowSuccessAlert}>
-            <AlertDialogContent>
-                <AlertDialogHeader>
-                    <AlertDialogTitle>Pengguna Baru Berhasil Dibuat</AlertDialogTitle>
-                    <AlertDialogDescription>
-                        Sesi admin Anda saat ini telah berakhir. Silakan login kembali untuk melanjutkan.
-                    </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                    <AlertDialogAction onClick={handleSuccessAlertClose}>OK</AlertDialogAction>
-                </AlertDialogFooter>
-            </AlertDialogContent>
-        </AlertDialog>
 
         </>
     );
@@ -742,6 +745,7 @@ const soundOptions = [
     { value: 'chime.mp3', label: 'Chime (Default)' },
     { value: 'ding.mp3', label: 'Ding' },
     { value: 'bell.mp3', label: 'Bell' },
+    { value: 'pengumuman.mp3', label: 'Pengumuman (Suara Rekaman)' },
 ];
 
 const DisplayTab = () => {
@@ -1154,12 +1158,14 @@ export default function AdminPage() {
         isSidebarOpen ? "w-64" : "w-20"
       )}>
         <div className="flex items-center justify-between h-20 border-b px-4">
-             <div className={cn("flex items-center gap-2 transition-opacity duration-300", isSidebarOpen ? 'opacity-100' : 'opacity-0')}>
-                <QNextLogo className="h-8 w-8 text-primary" />
-                <h1 className="text-xl font-bold text-primary tracking-tight whitespace-nowrap">
-                    Dasbor Admin
-                </h1>
-            </div>
+             <Link href="/" className={cn("transition-opacity duration-300", !isSidebarOpen && "opacity-0 pointer-events-none")} title="Kembali ke Halaman Utama">
+                <Image
+                  src="/qnext-logo.svg"
+                  alt="Qnext Logo"
+                  width={140}
+                  height={44}
+                />
+            </Link>
              <Button variant="ghost" size="icon" onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="ml-auto">
                  {isSidebarOpen ? <ChevronLeft /> : <ChevronRight />}
             </Button>
@@ -1195,9 +1201,13 @@ export default function AdminPage() {
       {/* Main Content */}
        <div className="flex-1 flex flex-col">
             <header className="bg-card shadow-sm sticky top-0 z-10 lg:hidden h-20 flex items-center px-4 justify-between">
-                 <div className="flex items-center gap-2">
-                    <QNextLogo className="h-8 w-8 text-primary" />
-                    <h1 className="text-xl font-bold text-primary">Dasbor Admin</h1>
+                 <div className="flex items-center gap-4">
+                    <Image
+                      src="/qnext-logo.svg"
+                      alt="Qnext Logo"
+                      width={128}
+                      height={40}
+                    />
                 </div>
                  <Button variant="ghost" size="icon" onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}>
                     <Menu/>

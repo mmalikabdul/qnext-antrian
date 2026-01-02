@@ -2,7 +2,7 @@
 
 import type { ReactNode } from 'react';
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { db, app } from '@/lib/firebase';
+import { initializeApp, deleteApp } from 'firebase/app';
 import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
 import { 
     collection, 
@@ -23,6 +23,7 @@ import {
     setDoc,
     getDoc,
 } from 'firebase/firestore';
+import { db, app } from '@/lib/firebase';
 import { useToast } from '@/hooks/use-toast';
 
 // Interfaces
@@ -121,7 +122,7 @@ interface ServiceDoc {
 interface QueueState {
   tickets: Ticket[];
   servingHistory: ServingInfo[];
-  nowServing: ServingInfo | null;
+  nowServingTickets: ServingInfo[];
   recallInfo: RecallInfo | null;
   counters: Counter[];
   services: Service[];
@@ -168,7 +169,7 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
   const [state, setState] = useState<QueueState>({
     tickets: [],
     servingHistory: [],
-    nowServing: null,
+    nowServingTickets: [],
     recallInfo: null,
     counters: [],
     services: [],
@@ -351,13 +352,17 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
       });
 
       const enriched = enrichTickets(tickets, state.services);
-      const servingTicket = enriched.find(t => t.status === 'serving');
-      const nowServing = servingTicket && servingTicket.counter ? { ticket: servingTicket, counter: servingTicket.counter } : null;
+      const servingTickets = enriched.filter(t => t.status === 'serving');
+      const nowServingTickets = servingTickets.map(ticket => ({
+          ticket,
+          counter: ticket.counter!
+      })).filter(info => info.counter != null);
+
 
       setState(prevState => ({
           ...prevState, 
           tickets: enriched,
-          nowServing
+          nowServingTickets
       }));
 
     }, (error) => {
@@ -437,30 +442,50 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
 
   const callNextTicket = async (serviceId: string, counter: number) => {
     try {
-      if (!state.currentUser) throw new Error("User not authenticated");
+        if (!state.currentUser) throw new Error("User not authenticated");
 
-      const waitingTickets = state.tickets.filter(t => t.serviceId === serviceId && t.status === 'waiting');
-      
-      if (waitingTickets.length === 0) {
-        toast({ variant: 'warning', title: 'Info', description: 'Tidak ada antrian untuk layanan ini.'});
-        return;
-      }
-      
-      const nextTicket = waitingTickets.sort((a,b) => a.timestamp.getTime() - b.timestamp.getTime())[0];
+        await runTransaction(db, async (transaction) => {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
 
-      const ticketRef = doc(db, 'tickets', nextTicket.id);
-      await updateDoc(ticketRef, { 
-          status: 'serving',
-          calledAt: serverTimestamp(),
-          servedBy: state.currentUser.name,
-          counter,
-      });
-      
-      toast({ title: "Memanggil Antrian", description: `Nomor ${nextTicket.number} dipanggil ke loket ${counter}.`})
+            // Check if this counter is already serving a ticket
+            const alreadyServing = state.nowServingTickets.some(info => info.counter === counter);
+            if (alreadyServing) {
+                throw new Error(`Loket ${counter} sudah melayani tiket lain.`);
+            }
 
-    } catch (error) {
+            const ticketsQuery = query(
+                collection(db, 'tickets'),
+                where('timestamp', '>=', today),
+                where('serviceId', '==', serviceId),
+                where('status', '==', 'waiting'),
+                orderBy('timestamp', 'asc'),
+                limit(1)
+            );
+
+            const waitingTicketsSnapshot = await getDocs(ticketsQuery);
+
+            if (waitingTicketsSnapshot.empty) {
+                toast({ variant: 'warning', title: 'Info', description: 'Tidak ada antrian untuk layanan ini.' });
+                return;
+            }
+
+            const nextTicketDoc = waitingTicketsSnapshot.docs[0];
+            const nextTicketData = nextTicketDoc.data() as TicketDoc;
+            
+            transaction.update(nextTicketDoc.ref, {
+                status: 'serving',
+                calledAt: serverTimestamp(),
+                servedBy: state.currentUser?.name,
+                counter,
+            });
+
+            toast({ title: "Memanggil Antrian", description: `Nomor ${nextTicketData.number} dipanggil ke loket ${counter}.` });
+        });
+
+    } catch (error: any) {
         console.error("Error calling next ticket: ", error);
-        toast({ variant: 'destructive', title: 'Error', description: 'Gagal memanggil tiket berikutnya.'});
+        toast({ variant: 'destructive', title: 'Error', description: error.message || 'Gagal memanggil tiket berikutnya.' });
     }
   };
   
@@ -508,14 +533,14 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
 
   // --- Admin Functions ---
   const addStaff = async (userData: any) => {
-    const { email, password, name, role, counters } = userData;
-    const currentAdmin = auth.currentUser;
-    if (!currentAdmin) {
-        throw new Error("Admin not logged in!");
-    }
-    
+    const { email, password, name, role, counters } = userData;    
+    // Create a temporary secondary app for user creation to avoid signing out the admin
+    const tempAppName = `temp-user-creation-${Date.now()}`;
+    const tempApp = initializeApp(app.options, tempAppName);
+    const tempAuth = getAuth(tempApp);
+
     try {
-        const newUserCredential = await createUserWithEmailAndPassword(auth, email, password);
+        const newUserCredential = await createUserWithEmailAndPassword(tempAuth, email, password);
         const newUser = newUserCredential.user;
 
         const batch = writeBatch(db);
@@ -528,12 +553,13 @@ export const QueueProvider = ({ children }: { children: ReactNode }) => {
         }
         
         await batch.commit();
-        
     } catch (error: any) {
         console.error("Error in addStaff:", error);
         throw error;
+    } finally {
+        await deleteApp(tempApp);
     }
-  }
+  };
 
   const updateStaff = async (staff: Staff) => {
       const { id, ...data } = staff;

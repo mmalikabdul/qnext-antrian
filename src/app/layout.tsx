@@ -7,7 +7,7 @@ import { QueueProvider } from '@/context/queue-context';
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
 
 export const metadata: Metadata = {
-  title: 'Q-NEXT - Sistem Antrian',
+  title: 'Q-NEXT- Sistem Antrian',
   description: 'Sistem antrian modern untuk front office BKPM.',
 };
 
@@ -19,6 +19,7 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${inter.variable} h-full`}>
       <head>
+        <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link

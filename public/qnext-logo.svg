@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1024" height="320" viewBox="0 0 1024 320" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="grad" cx="50%" cy="35%" r="70%">
+      <stop offset="0%" stop-color="#FF6A00"/>
+      <stop offset="60%" stop-color="#FF3D00"/>
+      <stop offset="100%" stop-color="#D92E00"/>
+    </radialGradient>
+    <filter id="dropShadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feOffset dx="0" dy="10" result="off"/>
+      <feGaussianBlur in="off" stdDeviation="12" result="blur"/>
+      <feColorMatrix in="blur" type="matrix" 
+        values="0 0 0 0 0
+                0 0 0 0 0
+                0 0 0 0 0
+                0 0 0 0.35 0" result="shadow"/>
+      <feBlend in="SourceGraphic" in2="shadow" mode="normal"/>
+    </filter>
+  </defs>
+
+  <!-- Icon on the left -->
+  <g transform="translate(20,20)" filter="url(#dropShadow)">
+    <circle cx="140" cy="140" r="120" fill="url(#grad)"/>
+    <ellipse cx="120" cy="100" rx="70" ry="40" fill="white" opacity="0.15"/>
+    <path fill="#FFFFFF" d="
+      M140,60
+      c-44.2,0 -80,35.8 -80,80
+      s35.8,80 80,80
+      s80,-35.8 80,-80
+      s-35.8,-80 -80,-80
+      z
+      M140,92
+      c24.9,0 45,20.1 45,45
+      c0,7.9 -2,15.3 -5.5,21.9
+      l22.2,22.2
+      c4.7,4.7 4.7,12.3 0,17
+      s-12.3,4.7 -17,0
+      l-21.4,-21.4
+      c-6.9,4.3 -15,6.8 -23.8,6.8
+      c-24.9,0 -45,-20.1 -45,-45
+      s20.1,-45 45,-45 z"/>
+  </g>
+
+  <!-- Wordmark -->
+  <g transform="translate(320,45)">
+    <text x="0" y="110" font-family="Inter, Poppins, Segoe UI, Arial, sans-serif" font-size="120" font-weight="700" fill="#1F2937" letter-spacing="1">
+      Qnext
+    </text>
+    <!-- small underline accent using gradient -->
+    <rect x="4" y="128" width="340" height="10" rx="5" fill="url(#grad)"/>
+  </g>
+</svg>
