@@ -22,6 +22,27 @@ export class UserService {
   }
 
   /**
+   * Ambil User berdasarkan ID
+   */
+  async findById(id: number) {
+    const user = await prisma.user.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        counters: true,
+        createdAt: true,
+        updatedAt: true
+      }
+    });
+    
+    if (!user) throw new Error("User not found");
+    return user;
+  }
+
+  /**
    * Membuat User Baru (Staff/Admin)
    * Logika mirip dengan register, tapi untuk penggunaan internal/admin
    */

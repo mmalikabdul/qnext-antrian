@@ -10,7 +10,7 @@ export const CounterController = new Elysia({ prefix: "/counters" })
 
   // Protected Routes (Admin Only)
   .use(authMiddleware)
-  .onBeforeHandle(({ role }) => role('ADMIN'))
+  .guard({ role: 'ADMIN' })
 
   .post("/", async ({ body, counterService, error }) => {
     try {

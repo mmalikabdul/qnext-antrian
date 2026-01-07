@@ -10,7 +10,7 @@ export const SettingController = new Elysia({ prefix: "/settings" })
 
   // Protected: Update Settings (Admin)
   .use(authMiddleware)
-  .onBeforeHandle(({ role }) => role('ADMIN'))
+  .guard({ role: 'ADMIN' })
 
   .post("/", async ({ body, settingService, error }) => {
     try {

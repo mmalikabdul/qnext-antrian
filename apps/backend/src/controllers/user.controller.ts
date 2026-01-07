@@ -10,10 +10,19 @@ export const UserController = new Elysia({ prefix: "/users" })
   .decorate("userService", new UserService())
 
   // 3. Batasi akses hanya untuk ADMIN untuk semua route di bawah ini
-  .onBeforeHandle(({ role }) => role('ADMIN'))
+  .guard({ role: 'ADMIN' })
 
   // GET /api/users - List semua staff
   .get("/", ({ userService }) => userService.findAll())
+
+  // GET /api/users/:id - Get Single User
+  .get("/:id", async ({ params: { id }, userService, error }) => {
+    try {
+      return await userService.findById(Number(id));
+    } catch (e: any) {
+      return error(404, { success: false, message: e.message });
+    }
+  })
 
   // POST /api/users - Add Staff (Register User baru oleh Admin)
   .post("/", async ({ body, userService, error }) => {

@@ -60,6 +60,7 @@ model Service {
   name        String   // Nama Layanan
   code        String   @unique // Kode antrian (A, B, C)
   description String?
+  icon        String?  // Nama icon dari library Frontend
   
   tickets     Ticket[] // Relasi one-to-many ke Tiket
   

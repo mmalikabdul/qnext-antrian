@@ -1,11 +1,9 @@
 'use client';
 
 import * as React from 'react';
-import { useRouter } from 'next/navigation';
 import {
   Card,
   CardContent,
-  CardDescription,
   CardFooter,
   CardHeader,
   CardTitle,
@@ -13,26 +11,21 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { LogIn, User, KeyRound, ArrowLeft } from 'lucide-react';
+import { LogIn, User as UserIcon, KeyRound, ArrowLeft, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
-import { getAuth, signInWithEmailAndPassword } from 'firebase/auth';
-import { app, db } from '@/lib/firebase';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { AlertCircle } from 'lucide-react';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { useQueue } from '@/context/queue-context';
 import Image from 'next/image';
+import { useAuth } from '@/context/auth-context';
 
 export default function LoginPage() {
-  const router = useRouter();
   const { toast } = useToast();
-  const { loginUser } = useQueue();
+  const { login } = useAuth(); // Gunakan Hook baru
+  
   const [email, setEmail] = React.useState('');
   const [password, setPassword] = React.useState('');
   const [error, setError] = React.useState<string | null>(null);
   const [isLoading, setIsLoading] = React.useState(false);
-  const auth = getAuth(app);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -40,63 +33,20 @@ export default function LoginPage() {
     setError(null);
 
     try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      const user = userCredential.user;
+      await login(email, password);
       
-      const userDocRef = doc(db, 'users', user.uid);
-      const userDocSnap = await getDoc(userDocRef);
-      
-      let userRole: 'admin' | 'staff' = 'staff';
-
-      // Ganti string ini dengan email admin yang sebenarnya
-      const ADMIN_EMAIL = 'admin@example.com';
-
-      if (userDocSnap.exists()) {
-        userRole = userDocSnap.data().role;
-        // Fix: Jika email adalah admin tapi role di database bukan admin, update jadi admin
-        if (user.email === ADMIN_EMAIL && userRole !== 'admin') {
-          userRole = 'admin';
-          await setDoc(userDocRef, { role: 'admin' }, { merge: true });
-        }
-      } else {
-        // This case should ideally not happen if users are created from admin panel
-        // But as a fallback, we create a doc.
-        userRole = (user.email === ADMIN_EMAIL) ? 'admin' : 'staff';
-        await setDoc(userDocRef, { email: user.email, role: userRole });
-        
-        // Also create a staff document
-        if (userRole === 'staff') {
-           const staffDocRef = doc(db, 'staff', user.uid);
-           await setDoc(staffDocRef, { name: user.email, counters: [] });
-        }
-      }
-      
-      const staffDocRef = doc(db, 'staff', user.uid);
-      const staffDocSnap = await getDoc(staffDocRef);
-      const staffData = staffDocSnap.exists() ? staffDocSnap.data() : { name: user.email, counters: []};
-
-      loginUser({ uid: user.uid, email: user.email!, role: userRole, ...staffData });
-
       toast({
         variant: "success",
         title: 'Login Berhasil!',
-        description: `Selamat datang kembali. Anda masuk sebagai ${userRole}.`,
+        description: `Selamat datang kembali.`,
       });
-
-      if (userRole === 'admin') {
-        router.push('/admin');
-      } else {
-        router.push('/staff');
-      }
+      // Redirect sudah dihandle di dalam auth-context login()
 
     } catch (error: any) {
-      setIsLoading(false);
       console.error("Login failed:", error);
-      if (error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password' || error.code === 'auth/user-not-found') {
-        setError('Email atau password salah. Silakan coba lagi.');
-      } else {
-        setError('Terjadi kesalahan saat login. Silakan coba lagi nanti.');
-      }
+      setError(error.message || 'Email atau password salah. Silakan coba lagi.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -133,7 +83,7 @@ export default function LoginPage() {
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <div className="relative">
-                <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input 
                   id="email" 
                   type="email" 
@@ -163,7 +113,7 @@ export default function LoginPage() {
               </div>
             </div>
              <p className="text-sm text-muted-foreground text-center">
-                Gunakan akun yang telah didaftarkan.
+                Masukan email dan password staff atau admin.
             </p>
           </CardContent>
           <CardFooter>
