@@ -1,3 +1,4 @@
+
 'use client';
 
 import type { ReactNode } from 'react';
@@ -25,6 +26,7 @@ import {
 } from 'firebase/firestore';
 import { db, app } from '@/lib/firebase';
 import { useToast } from '@/hooks/use-toast';
+import { ApiClient } from '@/lib/api-client';
 
 // Interfaces
 export interface Service {

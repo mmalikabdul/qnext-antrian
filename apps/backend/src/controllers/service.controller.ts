@@ -10,7 +10,7 @@ export const ServiceController = new Elysia({ prefix: "/services" })
 
   // Protected Routes (Admin Only)
   .use(authMiddleware)
-  .onBeforeHandle(({ role }) => role('ADMIN'))
+  .guard({ role: 'ADMIN' })
 
   .post("/", async ({ body, serviceService, error }) => {
     try {
@@ -22,7 +22,8 @@ export const ServiceController = new Elysia({ prefix: "/services" })
     body: t.Object({
       name: t.String(),
       code: t.String(),
-      description: t.Optional(t.String())
+      description: t.Optional(t.String()),
+      icon: t.Optional(t.String()) // Tambah validasi icon
     })
   })
 
@@ -36,7 +37,8 @@ export const ServiceController = new Elysia({ prefix: "/services" })
     body: t.Object({
       name: t.Optional(t.String()),
       code: t.Optional(t.String()),
-      description: t.Optional(t.String())
+      description: t.Optional(t.String()),
+      icon: t.Optional(t.String()) // Tambah validasi icon
     })
   })
 
@@ -45,6 +47,6 @@ export const ServiceController = new Elysia({ prefix: "/services" })
       await serviceService.delete(Number(id));
       return { success: true, message: "Service deleted successfully" };
     } catch (e: any) {
-      return error(400, { success: false, message: e.message }); // Kemungkinan error FK constraint
+      return error(400, { success: false, message: e.message });
     }
   });
