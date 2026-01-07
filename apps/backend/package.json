@@ -1,0 +1,21 @@
+{
+  "name": "qnext-backend",
+  "version": "1.0.0",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "bun run --watch src/index.ts",
+    "start": "bun run src/index.ts"
+  },
+  "dependencies": {
+    "@elysiajs/cors": "^1.4.1",
+    "@elysiajs/jwt": "^1.4.0",
+    "@elysiajs/swagger": "^1.3.1",
+    "@prisma/client": "5.10.0",
+    "elysia": "^1.4.21",
+    "socket.io": "^4.8.3"
+  },
+  "devDependencies": {
+    "bun-types": "latest",
+    "prisma": "5.10.0"
+  }
+}
