@@ -1,0 +1,110 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Enum untuk status tiket agar konsisten
+enum TicketStatus {
+  WAITING
+  SERVING
+  DONE
+  SKIPPED
+}
+
+enum Role {
+  ADMIN
+  STAFF
+}
+
+// User (Admin & Staff)
+model User {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  password  String   // Hashed Password
+  name      String
+  role      Role     @default(STAFF)
+  
+  // PostgreSQL supports array types natively.
+  // Menyimpan ID Counter yang ditugaskan ke staff ini.
+  counters  Int[]    
+
+  logs      AuthLog[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Mencatat riwayat Login/Logout
+model AuthLog {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id])
+  
+  action    String   // "LOGIN", "LOGOUT"
+  ipAddress String?
+  userAgent String?
+  
+  createdAt DateTime @default(now())
+}
+
+// Layanan (Contoh: Customer Service, Teller, Poli Umum)
+model Service {
+  id          Int      @id @default(autoincrement())
+  name        String   // Nama Layanan
+  code        String   @unique // Kode antrian (A, B, C)
+  description String?
+  icon        String?  // Nama icon dari library Frontend
+  
+  tickets     Ticket[] // Relasi one-to-many ke Tiket
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// Loket (Tempat staff melayani)
+model Counter {
+  id        Int      @id @default(autoincrement())
+  name      String   // "Loket 1", "Meja 2"
+  label     String?  // Label display (opsional)
+  
+  tickets   Ticket[] // Relasi: Loket ini melayani tiket mana saja
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Tiket Antrian
+model Ticket {
+  id        Int      @id @default(autoincrement())
+  
+  // Nomor urut harian per layanan
+  sequence  Int      
+  
+  // Nomor Display Full: "A-001"
+  number    String   
+  
+  status    TicketStatus @default(WAITING)
+  
+  // Relasi
+  service   Service @relation(fields: [serviceId], references: [id])
+  serviceId Int
+
+  counterId Int?     // Nullable karena saat waiting belum ada loket
+  counter   Counter? @relation(fields: [counterId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Pengaturan Aplikasi (Key-Value Store)
+model AppSetting {
+  key       String   @id
+  value     String   // Disimpan dalam format JSON String
+  updatedAt DateTime @updatedAt
+}

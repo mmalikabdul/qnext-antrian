@@ -1,0 +1,698 @@
+
+'use client';
+
+import type { ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { initializeApp, deleteApp } from 'firebase/app';
+import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
+import { 
+    collection, 
+    onSnapshot, 
+    addDoc, 
+    updateDoc, 
+    deleteDoc, 
+    doc, 
+    query, 
+    where, 
+    orderBy, 
+    limit, 
+    getDocs,
+    Timestamp,
+    serverTimestamp,
+    writeBatch,
+    runTransaction,
+    setDoc,
+    getDoc,
+} from 'firebase/firestore';
+import { db, app } from '@/lib/firebase';
+import { useToast } from '@/hooks/use-toast';
+import { ApiClient } from '@/lib/api-client';
+
+// Interfaces
+export interface Service {
+  id: string;
+  name: string;
+  servingCounters: number[];
+  icon: string; // Icon name from lucide-react
+}
+
+export interface Ticket {
+  id: string; // Firestore document ID
+  number: string;
+  serviceId: string;
+  service: Service; // This will be enriched data
+  timestamp: Date;
+  status: 'waiting' | 'serving' | 'done' | 'skipped';
+  // Optional fields for performance tracking
+  calledAt?: Date;
+  completedAt?: Date;
+  servedBy?: string;
+  counter?: number;
+}
+
+export interface ReportTicket {
+  id: string;
+  number: string;
+  serviceId: string;
+  serviceName: string;
+  timestamp: Date;
+  calledAt?: Date;
+  completedAt?: Date;
+  status: 'waiting' | 'serving' | 'done' | 'skipped';
+  servedBy?: string;
+  counter?: number;
+}
+
+export interface DisplaySettings {
+    videoUrl: string;
+    footerText: string;
+    colorScheme: string;
+    soundUrl: string;
+}
+
+
+export interface ServingInfo {
+  ticket: Ticket;
+  counter: number;
+}
+
+export interface RecallInfo {
+    ticketId: string;
+    timestamp: number;
+}
+
+export interface Staff {
+  id: string; // Firestore document ID, should be same as User UID
+  name: string;
+  counters: number[];
+}
+
+export interface Counter {
+    id: number;
+    docId: string; // Firestore document ID
+    name: string;
+    status: 'open' | 'closed';
+}
+
+export interface User {
+  uid: string;
+  email: string;
+  role: 'admin' | 'staff';
+  name?: string;
+  counters?: number[];
+}
+
+
+// Raw Firestore data types
+interface TicketDoc {
+    serviceId: string;
+    timestamp: Timestamp;
+    status: 'waiting' | 'serving' | 'done' | 'skipped';
+    number: string;
+    calledAt?: Timestamp;
+    completedAt?: Timestamp;
+    servedBy?: string; // staff name
+    counter?: number;
+}
+interface ServiceDoc {
+    name:string;
+    servingCounters: number[];
+    icon: string;
+}
+
+
+interface QueueState {
+  tickets: Ticket[];
+  servingHistory: ServingInfo[];
+  nowServingTickets: ServingInfo[];
+  recallInfo: RecallInfo | null;
+  counters: Counter[];
+  services: Service[];
+  staff: Staff[];
+  users: User[];
+  currentUser: User | null;
+  authLoaded: boolean;
+  displaySettings: DisplaySettings;
+}
+
+interface QueueContextType {
+  state: QueueState;
+  loginUser: (user: User) => void;
+  logoutUser: () => Promise<void>;
+  addTicket: (service: Service) => Promise<Ticket | null>;
+  callNextTicket: (serviceId: string, counter: number) => Promise<void>;
+  completeTicket: (ticketId: string) => Promise<void>;
+  skipTicket: (ticketId: string) => Promise<void>;
+  recallTicket: (ticketId: string) => Promise<void>;
+  addStaff: (staffData: any) => Promise<void>;
+  updateStaff: (staff: Staff) => Promise<void>;
+  deleteStaff: (staffId: string) => Promise<void>;
+  addCounter: (counter: Omit<Counter, 'id' | 'docId'>) => Promise<void>;
+  updateCounter: (counter: Counter) => Promise<void>;
+  deleteCounter: (counterDocId: string) => Promise<void>;
+  addService: (service: Omit<Service, 'id'> & { id: string }) => Promise<void>;
+  updateService: (service: Service) => Promise<void>;
+  deleteService: (serviceId: string) => Promise<void>;
+  updateDisplaySettings: (settings: DisplaySettings) => Promise<void>;
+  getReportData: (startDate: Date, endDate: Date) => Promise<ReportTicket[]>;
+}
+
+const QueueContext = createContext<QueueContextType | undefined>(undefined);
+
+const enrichTickets = (tickets: Ticket[], services: Service[]): Ticket[] => {
+    return tickets.map(ticket => ({
+        ...ticket,
+        service: services.find(s => s.id === ticket.serviceId) || { id: ticket.serviceId, name: 'Layanan tidak diketahui', servingCounters: [], icon: 'Ticket' }
+    }));
+};
+
+
+export const QueueProvider = ({ children }: { children: ReactNode }) => {
+  const [state, setState] = useState<QueueState>({
+    tickets: [],
+    servingHistory: [],
+    nowServingTickets: [],
+    recallInfo: null,
+    counters: [],
+    services: [],
+    staff: [],
+    users: [],
+    currentUser: null,
+    authLoaded: false,
+    displaySettings: {
+      videoUrl: 'https://www.youtube.com/embed/videoseries?list=PL2_3w_50q_p_4i_t_aA-i1l_n5s-ZqGcB',
+      footerText: 'Selamat datang di layanan Front Office kami. Kepuasan anda adalah prioritas kami. --- Mohon siapkan dokumen yang diperlukan sebelum menuju ke loket.',
+      colorScheme: 'default',
+      soundUrl: 'chime.mp3'
+    }
+  });
+  const { toast } = useToast();
+  const auth = getAuth(app);
+  
+  // Auth listener
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+        if (user) {
+            // Check if this user object is already the current user to avoid redundant fetches
+            if (state.currentUser && user.uid === state.currentUser.uid && state.authLoaded) {
+                return;
+            }
+
+            const userDocRef = doc(db, 'users', user.uid);
+            let userDocSnap = await getDoc(userDocRef);
+
+            const maxRetries = 5;
+            const retryDelayMs = 300;
+            let retries = 0;
+
+            while (!userDocSnap.exists() && retries < maxRetries) {
+                console.log(`User document not found for ${user.uid}, retrying... Attempt ${retries + 1}/${maxRetries}`);
+                await new Promise(resolve => setTimeout(resolve, retryDelayMs));
+                userDocSnap = await getDoc(userDocRef);
+                retries++;
+            }
+
+            if (userDocSnap.exists()) {
+                const userData = userDocSnap.data() as Omit<User, 'uid'>;
+
+                const staffDocRef = doc(db, 'staff', user.uid);
+                let staffDocSnap = await getDoc(staffDocRef);
+
+                retries = 0; 
+                while (userData.role === 'staff' && !staffDocSnap.exists() && retries < maxRetries) {
+                    console.log(`Staff document not found for ${user.uid}, retrying... Attempt ${retries + 1}/${maxRetries}`);
+                    await new Promise(resolve => setTimeout(resolve, retryDelayMs));
+                    staffDocSnap = await getDoc(staffDocRef);
+                    retries++;
+                }
+
+                const staffData = staffDocSnap.exists() ? staffDocSnap.data() as Omit<Staff, 'id'> : { name: userData.email, counters: [] };
+
+                setState(prevState => ({ ...prevState, currentUser: { uid: user.uid, ...userData, ...staffData }, authLoaded: true }));
+            } else {
+                 setState(prevState => ({ ...prevState, currentUser: null, authLoaded: true }));
+            }
+        } else {
+            setState(prevState => ({ ...prevState, currentUser: null, authLoaded: true }));
+        }
+    });
+    return () => unsubscribe();
+  }, [auth, state.currentUser, state.authLoaded]);
+
+
+  const loginUser = (user: User) => {
+    if (user && user.uid && user.email && user.role) {
+      setState(prevState => ({ ...prevState, currentUser: user }));
+    } else {
+      console.error("Attempted to log in with invalid user object:", user);
+    }
+  };
+
+  const logoutUser = async () => {
+    await signOut(auth);
+    setState(prevState => ({ ...prevState, currentUser: null }));
+  };
+
+
+  // Subscribe to Services
+  useEffect(() => {
+    const q = query(collection(db, 'services'));
+    const unsubscribe = onSnapshot(q, (querySnapshot) => {
+      const services: Service[] = [];
+      querySnapshot.forEach((doc) => {
+        const data = doc.data() as ServiceDoc;
+        services.push({ id: doc.id, ...data } as Service);
+      });
+      setState(prevState => ({...prevState, services}));
+    }, (error) => {
+      console.error("Error fetching services:", error);
+    });
+    return () => unsubscribe();
+  }, []);
+  
+  // Subscribe to Users
+  useEffect(() => {
+    const q = query(collection(db, 'users'));
+    const unsubscribe = onSnapshot(q, (querySnapshot) => {
+        const users: User[] = [];
+        querySnapshot.forEach((doc) => {
+            users.push({ uid: doc.id, name: doc.data().name, ...doc.data() } as User);
+        });
+        setState(prevState => ({...prevState, users}));
+    }, (error) => console.error("Error fetching users:", error));
+    return () => unsubscribe();
+  }, []);
+
+  // Subscribe to Counters
+  useEffect(() => {
+    const q = query(collection(db, 'counters'), orderBy('id'));
+    const unsubscribe = onSnapshot(q, (querySnapshot) => {
+      const counters: Counter[] = [];
+      querySnapshot.forEach((doc) => {
+        const data = doc.data();
+        counters.push({ docId: doc.id, id: data.id, name: data.name, status: data.status });
+      });
+      setState(prevState => ({...prevState, counters}));
+    }, (error) => {
+      console.error("Error fetching counters:", error);
+    });
+    return () => unsubscribe();
+  }, []);
+  
+  // Subscribe to Settings (for video URL)
+  useEffect(() => {
+    const settingsRef = doc(db, 'settings', 'display');
+    const unsubscribe = onSnapshot(settingsRef, (doc) => {
+        if (doc.exists()) {
+            const data = doc.data();
+            setState(prevState => ({...prevState, displaySettings: { ...prevState.displaySettings, ...data } }));
+        }
+    }, (error) => {
+        console.error("Error fetching settings:", error);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Subscribe to Staff
+  useEffect(() => {
+    const q = query(collection(db, 'staff'));
+    const unsubscribe = onSnapshot(q, (querySnapshot) => {
+      const staff: Staff[] = [];
+      querySnapshot.forEach((doc) => {
+        staff.push({ id: doc.id, ...doc.data() } as Staff);
+      });
+      setState(prevState => ({...prevState, staff}));
+    }, (error) => {
+      console.error("Error fetching staff:", error);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Subscribe to Tickets
+  useEffect(() => {
+    if (state.services.length === 0) return;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const q = query(collection(db, 'tickets'), where('timestamp', '>=', today), orderBy('timestamp'));
+    
+    const unsubscribe = onSnapshot(q, (querySnapshot) => {
+      const tickets: Ticket[] = [];
+      querySnapshot.forEach((doc) => {
+        const data = doc.data() as TicketDoc;
+        tickets.push({ 
+            id: doc.id, 
+            serviceId: data.serviceId,
+            timestamp: data.timestamp.toDate(),
+            number: data.number,
+            status: data.status,
+            calledAt: data.calledAt?.toDate(),
+            completedAt: data.completedAt?.toDate(),
+            servedBy: data.servedBy,
+            counter: data.counter,
+            service: {} as Service
+        });
+      });
+
+      const enriched = enrichTickets(tickets, state.services);
+      const servingTickets = enriched.filter(t => t.status === 'serving');
+      const nowServingTickets = servingTickets.map(ticket => ({
+          ticket,
+          counter: ticket.counter!
+      })).filter(info => info.counter != null);
+
+
+      setState(prevState => ({
+          ...prevState, 
+          tickets: enriched,
+          nowServingTickets
+      }));
+
+    }, (error) => {
+      console.error("Error fetching tickets:", error);
+    });
+    return () => unsubscribe();
+  }, [state.services]);
+
+
+    // Subscribe to Recall triggers
+    useEffect(() => {
+        const q = query(collection(db, "recall"));
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            snapshot.docChanges().forEach((change) => {
+                if (change.type === "added") {
+                    const data = change.doc.data();
+                    setState(prevState => ({
+                        ...prevState,
+                        recallInfo: { ticketId: data.ticketId, timestamp: Date.now() }
+                    }));
+                    // Delete the document immediately to prevent re-triggering
+                    deleteDoc(doc(db, "recall", change.doc.id));
+                }
+            });
+        });
+        return () => unsubscribe();
+    }, []);
+
+
+  const addTicket = async (service: Service): Promise<Ticket | null> => {
+    try {
+        const todayStr = new Date().toISOString().split('T')[0];
+        const counterRef = doc(db, 'daily_counters', `${service.id}_${todayStr}`);
+        
+        let newTicketData: Ticket | null = null;
+
+        await runTransaction(db, async (transaction) => {
+            const counterDoc = await transaction.get(counterRef);
+            
+            let newCount = 1;
+            if (counterDoc.exists()) {
+                newCount = counterDoc.data().count + 1;
+            }
+
+            const newTicketNumber = `${service.id}-${String(newCount).padStart(3, '0')}`;
+            
+            const newTicketRef = doc(collection(db, 'tickets'));
+            transaction.set(newTicketRef, {
+                number: newTicketNumber,
+                serviceId: service.id,
+                timestamp: serverTimestamp(),
+                status: 'waiting',
+            });
+            transaction.set(counterRef, { count: newCount }, { merge: true });
+
+            newTicketData = {
+                id: newTicketRef.id,
+                number: newTicketNumber,
+                service: service,
+                serviceId: service.id,
+                timestamp: new Date(),
+                status: 'waiting'
+            };
+        });
+
+        if (newTicketData) {
+             toast({ variant: "success", title: "Sukses", description: `Tiket ${newTicketData.number} berhasil dibuat.` });
+        }
+        return newTicketData;
+
+    } catch (error) {
+        console.error("Error adding ticket: ", error);
+        toast({ variant: 'destructive', title: 'Error', description: 'Gagal menambahkan tiket.'});
+        return null;
+    }
+  };
+
+  const callNextTicket = async (serviceId: string, counter: number) => {
+    try {
+        if (!state.currentUser) throw new Error("User not authenticated");
+
+        await runTransaction(db, async (transaction) => {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+
+            // Check if this counter is already serving a ticket
+            const alreadyServing = state.nowServingTickets.some(info => info.counter === counter);
+            if (alreadyServing) {
+                throw new Error(`Loket ${counter} sudah melayani tiket lain.`);
+            }
+
+            const ticketsQuery = query(
+                collection(db, 'tickets'),
+                where('timestamp', '>=', today),
+                where('serviceId', '==', serviceId),
+                where('status', '==', 'waiting'),
+                orderBy('timestamp', 'asc'),
+                limit(1)
+            );
+
+            const waitingTicketsSnapshot = await getDocs(ticketsQuery);
+
+            if (waitingTicketsSnapshot.empty) {
+                toast({ variant: 'warning', title: 'Info', description: 'Tidak ada antrian untuk layanan ini.' });
+                return;
+            }
+
+            const nextTicketDoc = waitingTicketsSnapshot.docs[0];
+            const nextTicketData = nextTicketDoc.data() as TicketDoc;
+            
+            transaction.update(nextTicketDoc.ref, {
+                status: 'serving',
+                calledAt: serverTimestamp(),
+                servedBy: state.currentUser?.name,
+                counter,
+            });
+
+            toast({ title: "Memanggil Antrian", description: `Nomor ${nextTicketData.number} dipanggil ke loket ${counter}.` });
+        });
+
+    } catch (error: any) {
+        console.error("Error calling next ticket: ", error);
+        toast({ variant: 'destructive', title: 'Error', description: error.message || 'Gagal memanggil tiket berikutnya.' });
+    }
+  };
+  
+  const completeTicket = async (ticketId: string) => {
+    try {
+        await updateDoc(doc(db, 'tickets', ticketId), { 
+            status: 'done',
+            completedAt: serverTimestamp()
+        });
+        toast({ variant: "success", title: "Layanan Selesai", description: "Antrian telah selesai dilayani."});
+
+    } catch (error) {
+        console.error("Error completing ticket: ", error);
+        toast({ variant: 'destructive', title: 'Error', description: 'Gagal menyelesaikan tiket.'});
+    }
+  };
+
+  const skipTicket = async (ticketId: string) => {
+    try {
+        await updateDoc(doc(db, 'tickets', ticketId), { 
+            status: 'skipped',
+            completedAt: serverTimestamp() 
+        });
+        toast({ variant: "warning", title: "Antrian Dilewati", description: "Antrian telah ditandai sebagai dilewati."});
+
+    } catch (error) {
+        console.error("Error skipping ticket: ", error);
+        toast({ variant: 'destructive', title: 'Error', description: 'Gagal melewati tiket.'});
+    }
+  };
+  
+  const recallTicket = async (ticketId: string) => {
+    try {
+      // Create a temporary document in 'recall' collection to trigger the listener
+      await addDoc(collection(db, "recall"), {
+        ticketId: ticketId,
+        timestamp: serverTimestamp(),
+      });
+      // The listener in useEffect will handle deleting this doc
+    } catch (error) {
+      console.error("Error recalling ticket:", error);
+      toast({ variant: 'destructive', title: 'Error', description: 'Gagal memanggil ulang tiket.'});
+    }
+  };
+
+  // --- Admin Functions ---
+  const addStaff = async (userData: any) => {
+    const { email, password, name, role, counters } = userData;    
+    // Create a temporary secondary app for user creation to avoid signing out the admin
+    const tempAppName = `temp-user-creation-${Date.now()}`;
+    const tempApp = initializeApp(app.options, tempAppName);
+    const tempAuth = getAuth(tempApp);
+
+    try {
+        const newUserCredential = await createUserWithEmailAndPassword(tempAuth, email, password);
+        const newUser = newUserCredential.user;
+
+        const batch = writeBatch(db);
+        const userDocRef = doc(db, 'users', newUser.uid);
+        batch.set(userDocRef, { name, email, role });
+        
+        if (role === 'staff') {
+            const staffDocRef = doc(db, 'staff', newUser.uid);
+            batch.set(staffDocRef, { name, counters: counters || [] });
+        }
+        
+        await batch.commit();
+    } catch (error: any) {
+        console.error("Error in addStaff:", error);
+        throw error;
+    } finally {
+        await deleteApp(tempApp);
+    }
+  };
+
+  const updateStaff = async (staff: Staff) => {
+      const { id, ...data } = staff;
+      await updateDoc(doc(db, 'staff', id), data);
+      const userDocRef = doc(db, 'users', id);
+      const userDocSnap = await getDoc(userDocRef);
+      if (userDocSnap.exists()) {
+          await updateDoc(userDocRef, { name: data.name });
+      }
+  }
+
+  const deleteStaff = async (staffId: string) => {
+      try {
+        const batch = writeBatch(db);
+        batch.delete(doc(db, 'staff', staffId));
+        batch.delete(doc(db, 'users', staffId));
+        await batch.commit();
+        console.warn(`User with UID ${staffId} deleted from Firestore, but not from Firebase Auth.`);
+      } catch (error: any) {
+        throw new Error(`Gagal menghapus data pengguna dari database: ${error.message}`);
+      }
+  }
+
+  const addCounter = async (counter: Omit<Counter, 'id' | 'docId'>) => {
+      const q = query(collection(db, 'counters'), orderBy('id', 'desc'), limit(1));
+      const lastCounterSnapshot = await getDocs(q);
+      const newId = lastCounterSnapshot.empty ? 1 : lastCounterSnapshot.docs[0].data().id + 1;
+      await addDoc(collection(db, 'counters'), {...counter, id: newId });
+  }
+
+  const updateCounter = async (counter: Counter) => {
+      const { docId, ...data } = counter;
+      await updateDoc(doc(db, 'counters', docId), data as any);
+  }
+
+  const deleteCounter = async (counterDocId: string) => {
+      await deleteDoc(doc(db, 'counters', counterDocId));
+  }
+  
+  const addService = async (service: Omit<Service, 'id'> & { id: string }) => {
+      await setDoc(doc(db, 'services', service.id), { 
+          name: service.name, 
+          servingCounters: service.servingCounters || [],
+          icon: service.icon || 'Ticket' 
+      });
+  }
+
+  const updateService = async (service: Service) => {
+      await updateDoc(doc(db, 'services', service.id), { 
+          name: service.name, 
+          servingCounters: service.servingCounters || [],
+          icon: service.icon || 'Ticket'
+      });
+  }
+
+  const deleteService = async (serviceId: string) => {
+    try {
+        const batch = writeBatch(db);
+        
+        const serviceRef = doc(db, 'services', serviceId);
+        batch.delete(serviceRef);
+
+        const todayStr = new Date().toISOString().split('T')[0];
+        const dailyCounterRef = doc(db, 'daily_counters', `${serviceId}_${todayStr}`);
+        const dailyCounterSnap = await getDoc(dailyCounterRef);
+        if (dailyCounterSnap.exists()){
+            batch.delete(dailyCounterRef);
+        }
+
+        await batch.commit();
+        toast({ variant: "success", title: "Sukses", description: "Layanan berhasil dihapus." });
+    } catch (e) {
+        console.error("Failed to delete service and its counters", e);
+        toast({ variant: "destructive", title: "Error", description: "Gagal menghapus layanan." });
+        throw e;
+    }
+  }
+  
+  const updateDisplaySettings = async (settings: DisplaySettings) => {
+    const settingsRef = doc(db, 'settings', 'display');
+    await setDoc(settingsRef, settings, { merge: true });
+  }
+
+  const getReportData = async (startDate: Date, endDate: Date): Promise<ReportTicket[]> => {
+    const startOfDay = new Date(startDate);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(endDate);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    const q = query(
+        collection(db, 'tickets'), 
+        where('timestamp', '>=', startOfDay), 
+        where('timestamp', '<=', endOfDay),
+        orderBy('timestamp', 'asc')
+    );
+
+    const querySnapshot = await getDocs(q);
+    const reportTickets: ReportTicket[] = [];
+
+    querySnapshot.forEach(docSnap => {
+        const data = docSnap.data() as TicketDoc;
+        const service = state.services.find(s => s.id === data.serviceId);
+        reportTickets.push({
+            id: docSnap.id,
+            number: data.number,
+            serviceId: data.serviceId,
+            serviceName: service?.name || 'Unknown',
+            timestamp: data.timestamp.toDate(),
+            calledAt: data.calledAt?.toDate(),
+            completedAt: data.completedAt?.toDate(),
+            status: data.status,
+            servedBy: data.servedBy,
+            counter: data.counter,
+        });
+    });
+
+    return reportTickets;
+  }
+
+
+  return (
+    <QueueContext.Provider value={{ state, loginUser, logoutUser, addTicket, callNextTicket, completeTicket, skipTicket, recallTicket, addStaff, updateStaff, deleteStaff, addCounter, updateCounter, deleteCounter, addService, updateService, deleteService, updateDisplaySettings, getReportData }}>
+      {children}
+    </QueueContext.Provider>
+  );
+};
+
+export const useQueue = () => {
+  const context = useContext(QueueContext);
+  if (context === undefined) {
+    throw new Error('useQueue must be used within a QueueProvider');
+  }
+  return context;
+};
