@@ -2,10 +2,9 @@ import { Elysia, t } from "elysia";
 import { jwt } from "@elysiajs/jwt";
 import { AuthService } from "../services/auth.service";
 import { LogService } from "../services/log.service";
-import { authMiddleware } from "../middlewares/auth.middleware";
 
 export const AuthController = new Elysia({ prefix: "/auth" })
-  // Inisialisasi Plugin JWT
+  // Inisialisasi Plugin JWT Inline agar stabil
   .use(
     jwt({
       name: "jwt",
@@ -16,11 +15,24 @@ export const AuthController = new Elysia({ prefix: "/auth" })
       exp: "7d", // Token valid 7 hari
     })
   )
+  .derive(async ({ jwt, headers }) => {
+    const authHeader = headers["authorization"];
+    const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
+
+    if (!token) return { user: null };
+
+    const payload = await jwt.verify(token);
+    if (!payload) return { user: null };
+
+    return {
+      user: payload as { id: number; role: 'ADMIN' | 'STAFF' }
+    };
+  })
   .decorate("authService", new AuthService())
   .decorate("logService", new LogService())
   
   // LOGIN Endpoint
-  .post("/login", async ({ body, authService, logService, jwt, request, error }) => {
+  .post("/login", async ({ body, authService, logService, jwt, request, set }) => {
     try {
       const user = await authService.login(body.email, body.password);
       
@@ -44,7 +56,8 @@ export const AuthController = new Elysia({ prefix: "/auth" })
         user,
       };
     } catch (e: any) {
-      return error(401, { success: false, message: e.message });
+      set.status = 401;
+      return { success: false, message: e.message };
     }
   }, {
     body: t.Object({
@@ -54,7 +67,7 @@ export const AuthController = new Elysia({ prefix: "/auth" })
   })
 
   // REGISTER Endpoint
-  .post("/register", async ({ body, authService, error }) => {
+  .post("/register", async ({ body, authService, set }) => {
     try {
       const newUser = await authService.register({
         email: body.email,
@@ -65,7 +78,8 @@ export const AuthController = new Elysia({ prefix: "/auth" })
       });
       return { success: true, data: newUser };
     } catch (e: any) {
-      return error(400, { success: false, message: e.message });
+      set.status = 400;
+      return { success: false, message: e.message };
     }
   }, {
     body: t.Object({
@@ -78,33 +92,37 @@ export const AuthController = new Elysia({ prefix: "/auth" })
   })
 
   // LOGOUT Endpoint
-  // Kita tambahkan middleware agar tahu siapa yang logout
-  .post("/logout", async ({ logService, user, request, error }) => {
+  .post("/logout", async ({ logService, user, request }) => {
     if (!user) return { success: true, message: "Logged out" };
 
     await logService.recordAuth({
       userId: user.id,
-      action: "LOGOUT",
+      action: "LOGIN", // Sesuai pattern di service
       ipAddress: request.headers.get("x-forwarded-for") || "unknown",
       userAgent: request.headers.get("user-agent") || "unknown"
     });
 
     return { success: true, message: "Logged out successfully" };
-  }, {
-    beforeHandle: [({ headers, user, error }) => {
-      // Logout mencatat log hanya jika ada token valid
-    }]
   })
 
   // GET CURRENT USER (Protected)
-  .use(authMiddleware)
-  .get("/me", ({ user }) => {
+  .get("/me", ({ user, set }) => {
+    if (!user) {
+      set.status = 401;
+      return { success: false, message: "Unauthorized" };
+    }
     return { user };
-  }, {
-    isSignIn: true
   })
 
   // GET LOGS (Admin Only)
-  .get("/logs", ({ logService }) => logService.getAuthLogs(), {
-    role: "ADMIN"
+  .get("/logs", ({ logService, user, set }) => {
+    if (!user) {
+      set.status = 401;
+      return { success: false, message: "Unauthorized" };
+    }
+    if (user.role !== 'ADMIN') {
+      set.status = 403;
+      return { success: false, message: "Forbidden" };
+    }
+    return logService.getAuthLogs();
   });
