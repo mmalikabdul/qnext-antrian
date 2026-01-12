@@ -210,7 +210,7 @@ export default function StaffDashboard() {
                     </CardContent>
                     <Separator />
                     <CardFooter className="grid grid-cols-3 gap-4 p-6 bg-gray-50/50">
-                        <Button variant="outline" size="lg" className="h-14 text-base" onClick={handleRecall}>
+                        <Button variant="warning" size="lg" className="h-14 text-base" onClick={handleRecall}>
                             <Mic className="mr-2 h-5 w-5" />
                             Panggil Ulang
                         </Button>
@@ -218,7 +218,13 @@ export default function StaffDashboard() {
                             <SkipForward className="mr-2 h-5 w-5" />
                             Lewati
                         </Button>
-                         <Button variant="default" size="lg" className="h-14 text-base bg-green-600 hover:bg-green-700" onClick={handleComplete} disabled={isLoading}>
+                        <Button 
+                            variant="success" 
+                            size="lg" 
+                            className="h-14 text-base" 
+                            onClick={handleComplete} 
+                            disabled={isLoading}
+                        >
                             <CheckCircle className="mr-2 h-5 w-5" />
                             Selesai
                         </Button>

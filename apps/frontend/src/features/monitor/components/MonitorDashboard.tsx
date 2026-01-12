@@ -2,16 +2,18 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useMonitorQueue } from '../hooks/useMonitorQueue';
 import { useSpeech } from '../hooks/useSpeech';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Bell, Ticket as TicketIcon } from 'lucide-react';
+import { Bell, Ticket as TicketIcon, Volume2, VolumeX } from 'lucide-react';
 import Image from 'next/image';
 import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
 
 export default function MonitorDashboard() {
   const { servingTickets, allTodayTickets, settings, lastCalledTicket, lastRecallTicket } = useMonitorQueue();
-  const { speak } = useSpeech();
+  const { speak, debugInfo } = useSpeech();
   const audioRef = useRef<HTMLAudioElement>(null);
   const [currentDate, setCurrentDate] = useState('');
   const [isRecalling, setIsRecalling] = useState(false);
+  const [audioEnabled, setAudioEnabled] = useState(false);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -20,50 +22,69 @@ export default function MonitorDashboard() {
     return () => clearInterval(timer);
   }, []);
 
+  // Helper untuk format teks antrian
+  const formatTicketText = (ticket: typeof lastCalledTicket) => {
+    if (!ticket) return '';
+    // Pisahkan huruf dan angka agar dibaca jelas. Contoh: A001 -> A, Kosong Kosong Satu
+    const readableNumber = ticket.number.split('').map(char => {
+        if (!isNaN(Number(char))) return char === '0' ? 'Kosong' : char;
+        return char;
+    }).join(' ');
+    
+    return `Nomor antrian, ${readableNumber}. Silahkan menuju loket, ${ticket.counter?.name}`;
+  };
+
   // Handle Voice Announcement for New Call
   useEffect(() => {
-    if (!lastCalledTicket) return;
+    if (!lastCalledTicket || !audioEnabled) return;
 
     const announce = () => {
         const audio = audioRef.current;
-        if (audio) {
-            const onEnd = () => {
-                const text = `Nomor antrian, ${lastCalledTicket.number.split('').join(' ')}, silahkan menuju, ke loket, ${lastCalledTicket.counter?.name}`;
-                speak(text);
-                audio.removeEventListener('ended', onEnd);
+        const textToSpeak = formatTicketText(lastCalledTicket);
+
+        if (audio && settings?.soundUrl) {
+            // Mainkan Chime dulu
+            const onChimeEnd = () => {
+                speak(textToSpeak); // Bicara setelah chime selesai
+                audio.removeEventListener('ended', onChimeEnd);
             };
-            audio.addEventListener('ended', onEnd);
-            audio.play().catch(e => {
-                console.warn("Audio play failed, speaking directly", e);
-                onEnd();
-            });
+            audio.addEventListener('ended', onChimeEnd);
+            audio.currentTime = 0;
+            audio.play().catch(e => console.error("Audio play error:", e));
+        } else {
+            // Langsung bicara jika tidak ada chime
+            speak(textToSpeak);
         }
     };
 
     announce();
-  }, [lastCalledTicket, speak]);
+  }, [lastCalledTicket, speak, settings, audioEnabled]);
 
   // Handle Recall
   useEffect(() => {
-    if (!lastRecallTicket) return;
+    if (!lastRecallTicket || !audioEnabled) return;
 
     setIsRecalling(true);
     setTimeout(() => setIsRecalling(false), 2000);
 
     const announce = () => {
         const audio = audioRef.current;
-        if (audio) {
-            const onEnd = () => {
-                const text = `Panggilan ulang untuk, nomor antrian, ${lastRecallTicket.number.split('').join(' ')}, silahkan menuju, ke loket, ${lastRecallTicket.counter?.name}`;
-                speak(text);
-                audio.removeEventListener('ended', onEnd);
+        const textToSpeak = `Panggilan ulang. ${formatTicketText(lastRecallTicket)}`;
+
+        if (audio && settings?.soundUrl) {
+            const onChimeEnd = () => {
+                speak(textToSpeak);
+                audio.removeEventListener('ended', onChimeEnd);
             };
-            audio.addEventListener('ended', onEnd);
-            audio.play().catch(onEnd);
+            audio.addEventListener('ended', onChimeEnd);
+            audio.currentTime = 0;
+            audio.play().catch(console.error);
+        } else {
+            speak(textToSpeak);
         }
     };
     announce();
-  }, [lastRecallTicket, speak]);
+  }, [lastRecallTicket, speak, settings, audioEnabled]);
 
   if (!settings) return <div className="h-screen flex items-center justify-center">Inisialisasi Monitor...</div>;
 
@@ -85,7 +106,26 @@ export default function MonitorDashboard() {
   }
 
   return (
-    <div className={cn("flex flex-col h-screen overflow-hidden font-sans", `theme-${settings.colorScheme}`)}>
+    <div className={cn("flex flex-col h-screen overflow-hidden font-sans relative", `theme-${settings.colorScheme}`)}>
+      {/* Overlay Enable Audio (Wajib untuk Autoplay Policy) */}
+      {!audioEnabled && (
+        <div className="absolute inset-0 z-50 bg-black/80 flex flex-col items-center justify-center text-white backdrop-blur-sm">
+            <VolumeX className="w-24 h-24 mb-6 opacity-50" />
+            <h1 className="text-3xl font-bold mb-4">Klik untuk Mengaktifkan Suara</h1>
+            <p className="text-gray-300 mb-8 max-w-md text-center">Browser memblokir suara otomatis. Silakan klik tombol di bawah untuk memulai monitor antrian.</p>
+            <Button size="lg" className="text-lg px-8 py-6 bg-primary hover:bg-primary/90" onClick={() => {
+                setAudioEnabled(true);
+                // Pancing play audio kosong untuk unlock
+                if(audioRef.current) {
+                    audioRef.current.play().catch(() => {});
+                    audioRef.current.pause();
+                }
+            }}>
+                <Volume2 className="mr-2" /> Mulai Monitor
+            </Button>
+        </div>
+      )}
+
       <audio ref={audioRef} src={`/sounds/${settings.soundUrl || 'chime.mp3'}`} preload="auto"></audio>
       
       <header className="px-8 py-2 flex justify-between items-center bg-monitor-header shadow-lg text-monitor-header-foreground">
@@ -153,9 +193,12 @@ export default function MonitorDashboard() {
         </div>
       </main>
 
-      <footer className="bg-monitor-header text-monitor-header-foreground p-4 border-t shadow-inner-top overflow-hidden">
+      <footer className="bg-monitor-header text-monitor-header-foreground p-4 border-t shadow-inner-top overflow-hidden relative">
         <div className="animate-marquee whitespace-nowrap text-2xl font-bold uppercase tracking-tight">
             {settings.footerText}
+        </div>
+        <div className="absolute bottom-1 left-1 text-[10px] opacity-50 font-mono text-black pointer-events-none">
+            TTS: {debugInfo}
         </div>
       </footer>
 

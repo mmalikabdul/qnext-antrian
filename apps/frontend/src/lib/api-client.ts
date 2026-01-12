@@ -37,7 +37,18 @@ const request = async (endpoint: string, options: RequestOptions = {}) => {
 
   try {
     const response = await fetch(`${BASE_URL}${endpoint}`, config);
-    const data = await response.json();
+    
+    // Cek tipe konten
+    const contentType = response.headers.get("content-type");
+    let data;
+
+    if (contentType && contentType.indexOf("application/json") !== -1) {
+      data = await response.json();
+    } else {
+      // Jika bukan JSON (misal error 500 text/plain), baca sebagai text
+      const text = await response.text();
+      data = { message: text || response.statusText };
+    }
 
     if (!response.ok) {
       throw new Error(data.message || "Something went wrong");
