@@ -1,20 +1,26 @@
 import { Server } from "socket.io";
-import type { Server as BunServer } from "bun";
 
 export let io: Server;
 
 export const initSocket = (server: any) => {
-  io = new Server(server, {
+  // IGNORE the passed server instance because Bun.serve is not compatible with Socket.IO attachment directly.
+  // We run Socket.IO as a standalone server on a separate port.
+  const SOCKET_PORT = 3002;
+  
+  console.log(`Starting Socket.IO on port ${SOCKET_PORT}...`);
+  
+  io = new Server({
     cors: {
-      origin: "*", // Sesuaikan dengan URL frontend nanti
+      origin: "*", 
       methods: ["GET", "POST"]
     }
   });
 
+  io.listen(SOCKET_PORT);
+
   io.on("connection", (socket) => {
     console.log(`🔌 Client connected: ${socket.id}`);
 
-    // Contoh join room per layanan jika dibutuhkan nanti
     socket.on("join-queue", (serviceId) => {
       socket.join(`queue-${serviceId}`);
       console.log(`👤 Client joined room: queue-${serviceId}`);
@@ -28,9 +34,6 @@ export const initSocket = (server: any) => {
   return io;
 };
 
-/**
- * Helper untuk emit event dari mana saja (Service/Controller)
- */
 export const emitQueueUpdate = (data: any) => {
   if (io) {
     io.emit("queue-updated", data);

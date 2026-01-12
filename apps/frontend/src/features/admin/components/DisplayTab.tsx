@@ -20,10 +20,9 @@ const colorSchemes = {
 };
 
 const soundOptions = [
-    { value: 'chime.mp3', label: 'Chime (Default)' },
-    { value: 'ding.mp3', label: 'Ding' },
-    { value: 'bell.mp3', label: 'Bell' },
-    { value: 'pengumuman.mp3', label: 'Pengumuman' },
+    { value: 'chime.mp3', label: 'Nada 1 (Ting-Nung)' },
+    { value: 'ding.mp3', label: 'Nada 2 (Ding)' },
+    { value: 'bell.mp3', label: 'Nada 3 (Airport Bell)' },
 ];
 
 export const DisplayTab = () => {
@@ -100,7 +99,7 @@ export const DisplayTab = () => {
                 </div>
 
                 <div className="space-y-2">
-                    <Label className="flex items-center gap-2"><Volume2 /> Suara Notifikasi</Label>
+                    <Label className="flex items-center gap-2"><Volume2 /> Suara Notifikasi Pembuka</Label>
                     <Select 
                         value={settings.soundUrl}
                         onValueChange={(value) => setSettings(prev => ({...prev, soundUrl: value }))}
@@ -114,6 +113,7 @@ export const DisplayTab = () => {
                             ))}
                         </SelectContent>
                     </Select>
+                    <p className="text-xs text-muted-foreground">Suara ini akan dimainkan sebelum pengumuman nomor antrian.</p>
                 </div>
 
                 <Button onClick={handleSave} disabled={isLoading}>
