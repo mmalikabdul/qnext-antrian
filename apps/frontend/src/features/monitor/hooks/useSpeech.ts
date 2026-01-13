@@ -1,6 +1,20 @@
 import { useState, useEffect, useCallback } from 'react';
 
-export const useSpeech = () => {
+interface UseSpeechOptions {
+  rate?: number;
+  pitch?: number;
+  lang?: string;
+  preferredVoice?: string;
+}
+
+export const useSpeech = (options: UseSpeechOptions = {}) => {
+  const { 
+    rate = 0.9, 
+    pitch = 1, 
+    lang = 'id-ID',
+    preferredVoice = 'Google Bahasa Indonesia'
+  } = options;
+
   const [isSupported, setIsSupported] = useState(false);
   const [voice, setVoice] = useState<SpeechSynthesisVoice | null>(null);
   const [debugInfo, setDebugInfo] = useState<string>('');
@@ -17,13 +31,18 @@ export const useSpeech = () => {
             return;
         }
 
-        // 1. Cari Bahasa Indonesia (Google Bahasa Indonesia / Microsoft Andika / dll)
-        let selectedVoice = voices.find(v => v.lang === 'id-ID' || v.name.includes('Indonesia'));
+        // 1. Prioritas Utama: Cari yang sesuai preferredVoice (misal: 'Google Bahasa Indonesia')
+        let selectedVoice = voices.find(v => v.name === preferredVoice);
+
+        // 2. Prioritas Kedua: Cari voice dengan lang 'id-ID' apa saja
+        if (!selectedVoice) {
+            selectedVoice = voices.find(v => v.lang === 'id-ID' || v.name.includes('Indonesia'));
+        }
         
-        // 2. Fallback: Malay
+        // 3. Fallback: Malay
         if (!selectedVoice) selectedVoice = voices.find(v => v.lang === 'ms-MY');
 
-        // 3. Fallback: English (Google US English) - Biar minimal ada suara
+        // 4. Fallback: English
         if (!selectedVoice) selectedVoice = voices.find(v => v.lang === 'en-US');
 
         if (selectedVoice) {
@@ -36,12 +55,11 @@ export const useSpeech = () => {
 
       loadVoices();
       
-      // Chrome kadang butuh event ini karena voice di-load async
       window.speechSynthesis.onvoiceschanged = loadVoices;
     } else {
         setDebugInfo("Web Speech API not supported in this browser.");
     }
-  }, []);
+  }, [preferredVoice]);
 
   const speak = useCallback((text: string) => {
     if (!isSupported) {
@@ -49,20 +67,17 @@ export const useSpeech = () => {
         return;
     }
 
-    window.speechSynthesis.cancel(); // Reset antrian
+    window.speechSynthesis.cancel();
 
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 0.9;
-    utterance.volume = 1;
+    utterance.rate = rate;
+    utterance.pitch = pitch;
 
-    // Jika voice ditemukan, pakai. Jika tidak, browser akan pakai default system voice.
     if (voice) {
       utterance.voice = voice;
-      // Paksa lang sesuai voice agar aksennya benar
       utterance.lang = voice.lang; 
     } else {
-        // Default fallback
-        utterance.lang = 'id-ID'; 
+        utterance.lang = lang; 
     }
 
     utterance.onstart = () => console.log("▶️ Speech started:", text);
@@ -70,7 +85,7 @@ export const useSpeech = () => {
     utterance.onerror = (e) => console.error("❌ Speech error:", e);
 
     window.speechSynthesis.speak(utterance);
-  }, [isSupported, voice]);
+  }, [isSupported, voice, rate, pitch, lang]);
 
   return { speak, isSupported, debugInfo };
 };

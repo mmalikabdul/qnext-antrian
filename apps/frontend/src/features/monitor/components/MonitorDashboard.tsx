@@ -1,31 +1,39 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useMonitorQueue } from '../hooks/useMonitorQueue';
 import { useSpeech } from '../hooks/useSpeech';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Bell, Ticket as TicketIcon, Volume2, VolumeX } from 'lucide-react';
+import { Volume2, VolumeX, ArrowRight } from 'lucide-react';
 import Image from 'next/image';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 
 export default function MonitorDashboard() {
-  const { servingTickets, allTodayTickets, settings, lastCalledTicket, lastRecallTicket } = useMonitorQueue();
-  const { speak, debugInfo } = useSpeech();
+  const { servingTickets, settings, lastCalledTicket, lastRecallTicket } = useMonitorQueue();
+  // Config Suara agar lebih natural
+  const { speak, debugInfo } = useSpeech({
+    rate: 0.85, 
+    pitch: 1.1, 
+    preferredVoice: 'Google Bahasa Indonesia'
+  });
   const audioRef = useRef<HTMLAudioElement>(null);
   const [currentDate, setCurrentDate] = useState('');
-  const [isRecalling, setIsRecalling] = useState(false);
+  const [currentTime, setCurrentTime] = useState('');
   const [audioEnabled, setAudioEnabled] = useState(false);
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      setCurrentDate(new Date().toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }));
-    }, 1000);
+    // Timer untuk tanggal dan jam
+    const updateTime = () => {
+        const now = new Date();
+        setCurrentDate(now.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }));
+        setCurrentTime(now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }));
+    };
+    updateTime();
+    const timer = setInterval(updateTime, 1000);
     return () => clearInterval(timer);
   }, []);
 
   // Helper untuk format teks antrian
   const formatTicketText = (ticket: typeof lastCalledTicket) => {
     if (!ticket) return '';
-    // Pisahkan huruf dan angka agar dibaca jelas. Contoh: A001 -> A, Kosong Kosong Satu
     const readableNumber = ticket.number.split('').map(char => {
         if (!isNaN(Number(char))) return char === '0' ? 'Kosong' : char;
         return char;
@@ -34,7 +42,7 @@ export default function MonitorDashboard() {
     return `Nomor antrian, ${readableNumber}. Silahkan menuju loket, ${ticket.counter?.name}`;
   };
 
-  // Handle Voice Announcement for New Call
+  // Handle Voice Announcement
   useEffect(() => {
     if (!lastCalledTicket || !audioEnabled) return;
 
@@ -43,16 +51,14 @@ export default function MonitorDashboard() {
         const textToSpeak = formatTicketText(lastCalledTicket);
 
         if (audio && settings?.soundUrl) {
-            // Mainkan Chime dulu
             const onChimeEnd = () => {
-                speak(textToSpeak); // Bicara setelah chime selesai
+                speak(textToSpeak);
                 audio.removeEventListener('ended', onChimeEnd);
             };
             audio.addEventListener('ended', onChimeEnd);
             audio.currentTime = 0;
             audio.play().catch(e => console.error("Audio play error:", e));
         } else {
-            // Langsung bicara jika tidak ada chime
             speak(textToSpeak);
         }
     };
@@ -63,9 +69,6 @@ export default function MonitorDashboard() {
   // Handle Recall
   useEffect(() => {
     if (!lastRecallTicket || !audioEnabled) return;
-
-    setIsRecalling(true);
-    setTimeout(() => setIsRecalling(false), 2000);
 
     const announce = () => {
         const audio = audioRef.current;
@@ -86,11 +89,10 @@ export default function MonitorDashboard() {
     announce();
   }, [lastRecallTicket, speak, settings, audioEnabled]);
 
-  if (!settings) return <div className="h-screen flex items-center justify-center">Inisialisasi Monitor...</div>;
+  if (!settings) return <div className="h-screen flex items-center justify-center bg-black text-white">Inisialisasi Monitor...</div>;
 
-  const latestServing = servingTickets[0];
-  const otherServing = servingTickets.slice(1);
-  const nextInQueue = allTodayTickets.filter(t => t.status === 'WAITING').slice(0, 5);
+  // Ticket yang sedang dipanggil (paling baru atau serving pertama)
+  const latestServing = servingTickets[0]; 
 
   const getFullVideoUrl = () => {
     if (!settings.videoUrl) return '';
@@ -106,141 +108,156 @@ export default function MonitorDashboard() {
   }
 
   return (
-    <div className={cn("flex flex-col h-screen overflow-hidden font-sans relative", `theme-${settings.colorScheme}`)}>
-      {/* Overlay Enable Audio (Wajib untuk Autoplay Policy) */}
+    <div className="flex flex-col h-screen w-screen overflow-hidden font-sans bg-zinc-900 text-white relative select-none">
+      
+      {/* --- AUDIO ENABLE OVERLAY --- */}
       {!audioEnabled && (
-        <div className="absolute inset-0 z-50 bg-black/80 flex flex-col items-center justify-center text-white backdrop-blur-sm">
-            <VolumeX className="w-24 h-24 mb-6 opacity-50" />
-            <h1 className="text-3xl font-bold mb-4">Klik untuk Mengaktifkan Suara</h1>
-            <p className="text-gray-300 mb-8 max-w-md text-center">Browser memblokir suara otomatis. Silakan klik tombol di bawah untuk memulai monitor antrian.</p>
-            <Button size="lg" className="text-lg px-8 py-6 bg-primary hover:bg-primary/90" onClick={() => {
+        <div className="absolute inset-0 z-[9999] bg-black/90 flex flex-col items-center justify-center text-white backdrop-blur-sm">
+            <VolumeX className="w-20 h-20 mb-6 opacity-50" />
+            <h1 className="text-3xl font-bold mb-4">Klik Layar untuk Mengaktifkan Suara</h1>
+            <Button size="lg" className="text-xl px-10 py-8 bg-green-600 hover:bg-green-700 rounded-2xl" onClick={() => {
                 setAudioEnabled(true);
-                // Pancing play audio kosong untuk unlock
                 if(audioRef.current) {
                     audioRef.current.play().catch(() => {});
                     audioRef.current.pause();
                 }
             }}>
-                <Volume2 className="mr-2" /> Mulai Monitor
+                <Volume2 className="mr-3 w-8 h-8" /> MULAI DISPLAY
             </Button>
         </div>
       )}
 
       <audio ref={audioRef} src={`/sounds/${settings.soundUrl || 'chime.mp3'}`} preload="auto"></audio>
       
-      <header className="px-8 py-2 flex justify-between items-center bg-monitor-header shadow-lg text-monitor-header-foreground">
-        <Image src="/qnext-logo.svg" alt="Logo" width={200} height={62} priority />
+      {/* --- HEADER --- */}
+      <header className="h-24 bg-white text-zinc-900 flex items-center justify-between px-8 relative z-20 shadow-md">
+        {/* Decorative Curve (Optional, simplified as border for now) */}
+        <div className="flex items-center gap-6">
+            <div className="relative h-16 w-16">
+                 {/* Logo Placeholder */}
+                 <Image src="/qnext-logo.svg" alt="Logo" fill className="object-contain" priority />
+            </div>
+            <div>
+                <h1 className="text-3xl font-black tracking-tight uppercase leading-none">
+                    {"QNext Antrian"}
+                </h1>
+                <p className="text-zinc-500 font-semibold text-sm mt-1">Sistem Antrian Terpadu</p>
+            </div>
+        </div>
         <div className="text-right">
-            <p className="text-3xl font-semibold">{currentDate}</p>
+            <p className="text-xl font-medium text-zinc-500">{currentDate}</p>
+            <p className="text-5xl font-bold text-zinc-800 tabular-nums leading-none tracking-tight">{currentTime}</p>
         </div>
       </header>
 
-      <main className="flex-1 grid grid-cols-12 grid-rows-6 gap-6 p-6 bg-monitor-background">
-         <div className="col-span-8 row-span-4 rounded-lg overflow-hidden shadow-2xl bg-black">
-            <iframe className="w-full h-full" src={getFullVideoUrl()} frameBorder="0" allow="autoplay"></iframe>
-        </div>
-
-        <Card className={cn("col-span-4 row-span-6 flex flex-col shadow-2xl bg-monitor-card border-none transition-all duration-500", isRecalling && "ring-8 ring-red-500")}>
-          <CardHeader className="text-center py-4 bg-monitor-primary text-monitor-primary-foreground">
-            <CardTitle className="text-4xl font-bold flex items-center justify-center gap-3">
-              <Bell className={cn(latestServing && "animate-bounce")} /> SEDANG DIPANGGIL
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="flex-1 flex flex-col justify-center items-center p-4">
-            {latestServing ? (
-                <>
-                    <p className="text-[9rem] font-extrabold text-monitor-primary leading-none tracking-tighter">{latestServing.number}</p>
-                    <div className="mt-6 text-center w-full">
-                        <p className="text-4xl font-medium text-monitor-muted-foreground">MENUJU</p>
-                        <p className="text-8xl font-bold text-monitor-primary mt-2 bg-monitor-primary/5 py-4 rounded-xl">LOKET {latestServing.counter?.name}</p>
-                    </div>
-                </>
-            ) : (
-                <div className="text-center opacity-20">
-                    <TicketIcon size={120} className="mx-auto mb-4" />
-                    <p className="text-2xl font-medium italic">Menunggu Antrian</p>
-                </div>
-            )}
-          </CardContent>
-          {otherServing.length > 0 && (
-            <div className="mt-auto p-4 border-t border-gray-100 bg-gray-50/50">
-                <h3 className="text-center text-xl font-bold text-monitor-muted-foreground mb-3 uppercase tracking-widest text-xs">Antrian Lainnya</h3>
-                <div className="space-y-2">
-                    {otherServing.slice(0, 3).map(t => (
-                        <div key={t.id} className="flex justify-between items-center p-3 bg-white border rounded-lg shadow-sm">
-                            <span className="font-bold text-2xl">{t.number}</span>
-                            <span className="font-semibold text-monitor-primary">LOKET {t.counter?.name}</span>
-                        </div>
-                    ))}
-                </div>
-            </div>
-          )}
-        </Card>
+      {/* --- MAIN CONTENT (SPLIT) --- */}
+        <div className="flex-1 p-6 flex gap-6 bg-zinc-800/50">
         
-        <div className="col-span-8 row-span-2 bg-white rounded-xl p-6 shadow-xl flex flex-col">
-            <h2 className="text-2xl font-bold mb-4 text-monitor-muted-foreground flex items-center gap-2">
-                <TicketIcon className="text-primary" /> ANTRIAN BERIKUTNYA
-            </h2>
-            <div className="grid grid-cols-5 gap-4 flex-1">
-                {nextInQueue.map(t => (
-                    <div key={t.id} className="bg-slate-50 border rounded-xl flex flex-col items-center justify-center p-4 text-center shadow-inner">
-                        <p className="text-4xl font-black text-slate-800 tracking-tighter">{t.number}</p>
-                        <p className="text-xs font-medium text-slate-500 uppercase mt-1 truncate w-full">{t.service?.name}</p>
+
+        {/* LEFT: BIG CALL CARD */}
+          <div className="w-[45%] flex flex-col">
+
+            {/* The "Paper" Effect Container */}
+           <div className="flex-1 bg-white rounded-3xl shadow-2xl flex flex-col justify-center px-10">
+                
+                {/* Red Header Tag */}
+                <div className="bg-[#e11d48] text-white p-6 relative overflow-hidden">
+                     {/* Decorative pattern */}
+                    <div className="absolute top-0 right-0 p-4 opacity-10">
+                        <Volume2 size={100} />
                     </div>
-                ))}
-                {nextInQueue.length === 0 && <div className="col-span-5 flex items-center justify-center italic text-slate-400">Tidak ada antrian menunggu</div>}
+                    <h2 className="text-4xl font-black uppercase tracking-wider text-center drop-shadow-md">
+                        {latestServing ? "MEMANGGIL ANTRIAN" : "MENUNGGU ANTRIAN"}
+                    </h2>
+                </div>
+
+                {/* White Body */}
+                <div className="flex-1 flex flex-col items-center justify-center p-8 relative">
+                    {latestServing ? (
+                        <>
+                           <div className="flex flex-row items-center justify-center w-full gap-8">
+                                {/* Nomor Antrian */}
+                                <div className="flex flex-col items-center">
+                                    <span className="text-8xl font-black text-zinc-800 tracking-tighter">
+                                        {latestServing.number}
+                                    </span>
+                                    <span className="text-zinc-400 font-bold uppercase tracking-widest mt-2">Nomer Antrian</span>
+                                </div>
+
+                                {/* Arrow */}
+                                <div className="text-[#e11d48] animate-pulse">
+                                    <ArrowRight size={80} strokeWidth={4} />
+                                </div>
+
+                                {/* Loket */}
+                                <div className="flex flex-col items-center">
+                                    <span className="text-8xl font-black text-zinc-800 tracking-tighter">
+                                        {latestServing.counter?.name}
+                                    </span>
+                                    <span className="text-zinc-400 font-bold uppercase tracking-widest mt-2">Loket</span>
+                                </div>
+                           </div>
+                        </>
+                    ) : (
+                        <div className="opacity-20 flex flex-col items-center animate-pulse">
+                            <span className="text-6xl font-bold text-zinc-400">ISTIRAHAT</span>
+                        </div>
+                    )}
+                </div>
             </div>
         </div>
-      </main>
 
-      <footer className="bg-monitor-header text-monitor-header-foreground p-4 border-t shadow-inner-top overflow-hidden relative">
-        <div className="animate-marquee whitespace-nowrap text-2xl font-bold uppercase tracking-tight">
-            {settings.footerText}
-        </div>
-        <div className="absolute bottom-1 left-1 text-[10px] opacity-50 font-mono text-black pointer-events-none">
-            TTS: {debugInfo}
+        {/* RIGHT: VIDEO */}
+          <div className="flex-1 relative">
+            <div className="absolute inset-0 bg-black rounded-3xl overflow-hidden shadow-2xl border-4 border-[#22c55e] h-full w-full">
+              <iframe
+                src={getFullVideoUrl()}
+                className="w-full h-full"
+                allow="autoplay; encrypted-media"
+                allowFullScreen
+              />
+            </div>
+          </div>
+      </div>
+
+      {/* --- BOTTOM: COUNTER LIST --- */}
+      <div className="h-64 bg-zinc-900 p-6 pt-0 z-10">
+         <div className="grid grid-cols-5 gap-4 h-full">
+            {/* Render 5 slots, fill with servingTickets or empty placeholders */}
+            {Array.from({ length: 5 }).map((_, i) => {
+                const ticket = servingTickets[i];
+                return (
+                    <div key={i} className="flex flex-col rounded-xl overflow-hidden shadow-lg border-2 border-zinc-700/50 bg-[#166534]">
+                        {/* Upper Part (Number) */}
+                        <div className="flex-1 flex items-center justify-center bg-[#22c55e] relative">
+                             {ticket ? (
+                                <span className="text-6xl font-black text-white tracking-tighter drop-shadow-md">{ticket.number}</span>
+                             ) : (
+                                <span className="text-4xl font-bold text-green-800/30">--</span>
+                             )}
+                        </div>
+                        {/* Lower Part (Label) */}
+                        <div className="h-14 bg-[#14532d] flex items-center justify-center">
+                            <span className="text-2xl font-bold text-green-100 uppercase tracking-widest">
+                                {ticket ? `LOKET ${ticket.counter?.name}` : `LOKET ${i + 1}`}
+                            </span>
+                        </div>
+                    </div>
+                );
+            })}
+         </div>
+      </div>
+
+      {/* --- FOOTER MARQUEE --- */}
+      <footer className="h-12 bg-white text-zinc-900 flex items-center overflow-hidden border-t-4 border-[#e11d48]">
+        <div className="animate-marquee whitespace-nowrap text-xl font-bold uppercase tracking-wide px-4 w-full">
+            {settings.footerText || "Selamat Datang di Pelayanan Terpadu - Budayakan Antri Untuk Kenyamanan Bersama - Terima Kasih Atas Kunjungan Anda"}
         </div>
       </footer>
 
       <style jsx>{`
-        @keyframes marquee { 0% { transform: translateX(100%); } 100% { transform: translateX(-150%); } }
-        .animate-marquee { display: inline-block; animation: marquee 40s linear infinite; }
-        .theme-default {
-            --monitor-background: #f8fafc;
-            --monitor-header: #ffffff;
-            --monitor-header-foreground: #0f172a;
-            --monitor-card: #ffffff;
-            --monitor-primary: #1e40af;
-            --monitor-primary-foreground: #ffffff;
-            --monitor-muted-foreground: #64748b;
-        }
-        .theme-forest {
-            --monitor-background: #f0fdf4;
-            --monitor-header: #ffffff;
-            --monitor-header-foreground: #14532d;
-            --monitor-card: #ffffff;
-            --monitor-primary: #15803d;
-            --monitor-primary-foreground: #ffffff;
-            --monitor-muted-foreground: #166534;
-        }
-        .theme-sunset {
-            --monitor-background: #fffaf0;
-            --monitor-header: #ffffff;
-            --monitor-header-foreground: #7c2d12;
-            --monitor-card: #ffffff;
-            --monitor-primary: #c2410c;
-            --monitor-primary-foreground: #ffffff;
-            --monitor-muted-foreground: #9a3412;
-        }
-        .theme-modern {
-            --monitor-background: #0f172a;
-            --monitor-header: #1e293b;
-            --monitor-header-foreground: #f8fafc;
-            --monitor-card: #1e293b;
-            --monitor-primary: #f8fafc;
-            --monitor-primary-foreground: #0f172a;
-            --monitor-muted-foreground: #94a3b8;
-        }
+        @keyframes marquee { 0% { transform: translateX(100%); } 100% { transform: translateX(-100%); } }
+        .animate-marquee { display: inline-block; animation: marquee 30s linear infinite; }
       `}</style>
     </div>
   );
