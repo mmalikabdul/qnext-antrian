@@ -14,12 +14,15 @@ const ServiceForm = ({ service, onSave, closeDialog }: { service?: Service | nul
     const [name, setName] = useState(service?.name || '');
     const [code, setCode] = useState(service?.code || '');
     const [description, setDescription] = useState(service?.description || '');
+    const [quota, setQuota] = useState(service?.quota?.toString() || '');
     const [isLoading, setIsLoading] = useState(false);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsLoading(true);
-        await onSave({ name, code, description });
+        // Convert quota to number or null/undefined
+        const quotaValue = quota ? parseInt(quota) : null;
+        await onSave({ name, code, description, quota: quotaValue });
         setIsLoading(false);
         closeDialog();
     };
@@ -33,6 +36,11 @@ const ServiceForm = ({ service, onSave, closeDialog }: { service?: Service | nul
             <div className="space-y-2">
                 <Label>Nama Layanan</Label>
                 <Input value={name} onChange={e => setName(e.target.value)} required placeholder="Customer Service" />
+            </div>
+            <div className="space-y-2">
+                <Label>Kuota Harian (Opsional)</Label>
+                <Input type="number" value={quota} onChange={e => setQuota(e.target.value)} placeholder="0 = Tidak terbatas" />
+                <p className="text-xs text-muted-foreground">Batasi jumlah tiket per hari. Kosongkan jika tidak terbatas.</p>
             </div>
             <div className="space-y-2">
                 <Label>Deskripsi</Label>
@@ -108,6 +116,7 @@ export const ServiceTab = () => {
                         <TableRow>
                             <TableHead>Kode</TableHead>
                             <TableHead>Nama Layanan</TableHead>
+                            <TableHead>Kuota</TableHead>
                             <TableHead>Deskripsi</TableHead>
                             <TableHead className="text-right">Aksi</TableHead>
                         </TableRow>
@@ -117,6 +126,23 @@ export const ServiceTab = () => {
                             <TableRow key={s.id}>
                                 <TableCell className="font-bold">{s.code}</TableCell>
                                 <TableCell>{s.name}</TableCell>
+                                <TableCell>
+                                    {s.quota ? (
+                                        <div className="flex flex-col">
+                                            <span>{s.usedQuota} / {s.quota}</span>
+                                            <div className="w-24 h-1 bg-secondary mt-1 rounded-full overflow-hidden">
+                                                <div 
+                                                    className={`h-full ${((s.usedQuota || 0) / s.quota) >= 1 ? 'bg-destructive' : 'bg-primary'}`}
+                                                    style={{ width: `${Math.min(100, ((s.usedQuota || 0) / s.quota) * 100)}%` }}
+                                                />
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="flex flex-col text-muted-foreground italic">
+                                            <span>{s.usedQuota} / ∞</span>
+                                        </div>
+                                    )}
+                                </TableCell>
                                 <TableCell>{s.description || '-'}</TableCell>
                                 <TableCell className="text-right">
                                     <Dialog open={editingService?.id === s.id} onOpenChange={(open) => !open && setEditingService(null)}>

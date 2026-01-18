@@ -53,7 +53,8 @@ export const ServiceController = new Elysia({ prefix: "/services" })
       name: t.String(),
       code: t.String(),
       description: t.Optional(t.String()),
-      icon: t.Optional(t.String())
+      icon: t.Optional(t.String()),
+      quota: t.Optional(t.Number())
     })
   })
 
@@ -77,7 +78,8 @@ export const ServiceController = new Elysia({ prefix: "/services" })
       name: t.Optional(t.String()),
       code: t.Optional(t.String()),
       description: t.Optional(t.String()),
-      icon: t.Optional(t.String())
+      icon: t.Optional(t.String()),
+      quota: t.Optional(t.Number())
     })
   })
 

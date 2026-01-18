@@ -66,6 +66,11 @@ export class TicketService {
         }
       });
 
+      // Cek Kuota (LOGIC LAMA: DI-SKIP DULU SESUAI REQUEST)
+      // if (service.quota > 0 && countToday >= service.quota) {
+      //   throw new Error(`Kuota untuk layanan ${service.name} sudah penuh (${service.quota}).`);
+      // }
+
       const sequence = countToday + 1;
       const number = formatTicketNumber(sequence, service.code);
 
@@ -80,6 +85,29 @@ export class TicketService {
           service: true
         }
       });
+
+      // --- RECORD STATISTIK HARIAN ---
+      // Kita simpan/update statistik harian untuk keperluan reporting cepat & histori kuota
+      await tx.serviceDailyStat.upsert({
+        where: {
+            date_serviceId: {
+                date: today,
+                serviceId: serviceId
+            }
+        },
+        create: {
+            date: today,
+            serviceId: serviceId,
+            quotaSnapshot: service.quota, // Simpan kuota saat ini sebagai histori
+            totalTickets: 1
+        },
+        update: {
+            totalTickets: { increment: 1 },
+            // Opsional: Update quotaSnapshot jika ingin mengikuti perubahan terakhir hari ini
+            quotaSnapshot: service.quota 
+        }
+      });
+      // -------------------------------
 
       // Broadcast update ke semua client
       emitQueueUpdate({ type: "NEW_TICKET", ticket });
