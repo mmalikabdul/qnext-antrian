@@ -111,6 +111,15 @@ model Booking {
   
   // Tanggal rencana kedatangan (disimpan sebagai jam 00:00:00)
   bookingDate DateTime
+
+  // Data User (dari SSO OSS)
+  email           String?
+  nib             String?
+  namaPerusahaan  String?
+  idProfileOss    String?
+
+  issueDescription String? // Penjelasan kendala
+  fileUrl          String? // URL file pendukung (Local/Firebase)
   
   status    BookingStatus @default(PENDING)
   

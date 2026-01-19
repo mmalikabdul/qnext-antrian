@@ -19,8 +19,25 @@ export const bookingService = {
     return await apiClient.get(`/bookings/check?serviceId=${serviceId}&date=${date}`);
   },
 
-  createBooking: async (serviceId: number, date: string): Promise<BookingResponse> => {
-    return await apiClient.post("/bookings", { serviceId, date });
+  createBooking: async (
+    serviceId: number, 
+    date: string, 
+    issueDescription?: string, 
+    fileUrl?: string,
+    userDetails?: {
+        email?: string;
+        nib?: string;
+        namaPerusahaan?: string;
+        idProfileOss?: string | number;
+    }
+  ): Promise<BookingResponse> => {
+    return await apiClient.post("/bookings", {
+      serviceId,
+      date,
+      issueDescription,
+      fileUrl,
+      ...userDetails
+    });
   },
 
   redeemBooking: async (code: string, serviceId: number) => {

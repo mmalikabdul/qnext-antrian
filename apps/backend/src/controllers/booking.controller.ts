@@ -19,8 +19,21 @@ export const BookingController = new Elysia({ prefix: "/bookings" })
   // Buat Booking
   .post("/", async ({ body, bookingService, set }) => {
     try {
-        const { serviceId, date } = body;
-        return await bookingService.createBooking(Number(serviceId), date);
+        const { serviceId, date, issueDescription, fileUrl, email, nib, namaPerusahaan, idProfileOss } = body;
+        
+        // Convert idProfileOss to string if it's a number
+        const idProfileStr = idProfileOss ? String(idProfileOss) : undefined;
+
+        return await bookingService.createBooking(
+            Number(serviceId), 
+            date, 
+            issueDescription, 
+            fileUrl,
+            email,
+            nib,
+            namaPerusahaan,
+            idProfileStr
+        );
     } catch (e: any) {
         set.status = 400;
         return { success: false, message: e.message };
@@ -28,7 +41,13 @@ export const BookingController = new Elysia({ prefix: "/bookings" })
   }, {
     body: t.Object({
         serviceId: t.Number(),
-        date: t.String() // Format YYYY-MM-DD
+        date: t.String(), // Format YYYY-MM-DD
+        issueDescription: t.Optional(t.String()),
+        fileUrl: t.Optional(t.String()),
+        email: t.Optional(t.String()),
+        nib: t.Optional(t.String()),
+        namaPerusahaan: t.Optional(t.String()),
+        idProfileOss: t.Optional(t.Union([t.String(), t.Number()])) // Accept string or number
     })
   })
 

@@ -41,7 +41,16 @@ export class BookingService {
   /**
    * Buat Booking Baru
    */
-  async createBooking(serviceId: number, dateStr: string) {
+  async createBooking(
+    serviceId: number, 
+    dateStr: string, 
+    issueDescription?: string, 
+    fileUrl?: string,
+    email?: string,
+    nib?: string,
+    namaPerusahaan?: string,
+    idProfileOss?: string
+  ) {
     // 1. Cek Availability dulu
     const check = await this.checkAvailability(serviceId, dateStr);
     if (!check.available) {
@@ -65,6 +74,12 @@ export class BookingService {
         code,
         serviceId,
         bookingDate,
+        issueDescription,
+        fileUrl,
+        email,
+        nib,
+        namaPerusahaan,
+        idProfileOss,
         status: BookingStatus.PENDING
       },
       include: {
