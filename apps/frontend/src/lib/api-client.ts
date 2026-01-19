@@ -18,9 +18,14 @@ const getToken = () => {
 const request = async (endpoint: string, options: RequestOptions = {}) => {
   const token = options.token || getToken();
   const headers: Record<string, string> = {
-    "Content-Type": "application/json",
     ...options.headers,
   };
+
+  // Only set application/json if not FormData. 
+  // Browser will set Content-Type: multipart/form-data; boundary=... automatically for FormData
+  if (!(options.body instanceof FormData)) {
+    headers["Content-Type"] = "application/json";
+  }
 
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
@@ -32,7 +37,7 @@ const request = async (endpoint: string, options: RequestOptions = {}) => {
   };
 
   if (options.body) {
-    config.body = JSON.stringify(options.body);
+    config.body = options.body instanceof FormData ? options.body : JSON.stringify(options.body);
   }
 
   try {

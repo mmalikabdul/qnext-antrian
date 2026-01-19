@@ -14,6 +14,9 @@ export interface Service {
   name: string;
   code: string;
   description?: string;
+  icon?: string;
+  quota: number;
+  usedQuota?: number;
 }
 
 export interface Ticket {

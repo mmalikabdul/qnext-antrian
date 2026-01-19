@@ -61,11 +61,70 @@ model Service {
   code        String   @unique // Kode antrian (A, B, C)
   description String?
   icon        String?  // Nama icon dari library Frontend
+  quota       Int      @default(0) // Kuota harian
   
   tickets     Ticket[] // Relasi one-to-many ke Tiket
+  dailyStats  ServiceDailyStat[] // Relasi ke statistik harian
+  bookings    Booking[] // Relasi ke booking online
   
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+// Statistik Harian Layanan (Untuk Reporting & Histori Kuota)
+model ServiceDailyStat {
+  id           Int      @id @default(autoincrement())
+  
+  // Tanggal statistik (jam 00:00:00)
+  date         DateTime 
+  
+  serviceId    Int
+  service      Service  @relation(fields: [serviceId], references: [id])
+  
+  // Snapshot nilai kuota pada hari tersebut
+  quotaSnapshot Int     
+  
+  // Jumlah tiket yang terbentuk (used quota)
+  totalTickets  Int      @default(0)
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Pastikan hanya ada 1 record per layanan per hari
+  @@unique([date, serviceId])
+}
+
+enum BookingStatus {
+  PENDING
+  USED
+  EXPIRED
+  CANCELLED
+}
+
+// Booking Online
+model Booking {
+  id        Int           @id @default(autoincrement())
+  code      String        @unique // Kode unik booking, misal: BOOK-12345
+  
+  serviceId Int
+  service   Service       @relation(fields: [serviceId], references: [id])
+  
+  // Tanggal rencana kedatangan (disimpan sebagai jam 00:00:00)
+  bookingDate DateTime
+
+  // Data User (dari SSO OSS)
+  email           String?
+  nib             String?
+  namaPerusahaan  String?
+  idProfileOss    String?
+
+  issueDescription String? // Penjelasan kendala
+  fileUrl          String? // URL file pendukung (Local/Firebase)
+  
+  status    BookingStatus @default(PENDING)
+  
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
 }
 
 // Loket (Tempat staff melayani)
