@@ -54,7 +54,9 @@ export const ServiceController = new Elysia({ prefix: "/services" })
       code: t.String(),
       description: t.Optional(t.String()),
       icon: t.Optional(t.String()),
-      quota: t.Optional(t.Number())
+      quota: t.Optional(t.Number()),
+      startTime: t.Optional(t.String()),
+      endTime: t.Optional(t.String())
     })
   })
 
@@ -79,7 +81,9 @@ export const ServiceController = new Elysia({ prefix: "/services" })
       code: t.Optional(t.String()),
       description: t.Optional(t.String()),
       icon: t.Optional(t.String()),
-      quota: t.Optional(t.Number())
+      quota: t.Optional(t.Number()),
+      startTime: t.Optional(t.String()),
+      endTime: t.Optional(t.String())
     })
   })
 

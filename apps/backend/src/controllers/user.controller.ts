@@ -30,7 +30,7 @@ export const UserController = new Elysia({ prefix: "/users" })
   })
 
   // GET /api/users - List semua staff
-  .get("/", async ({ userService, user, set }) => {
+  .get("/", async ({ query, userService, user, set }) => {
     if (!user) {
       set.status = 401;
       return { success: false, message: "Unauthorized" };
@@ -39,7 +39,13 @@ export const UserController = new Elysia({ prefix: "/users" })
       set.status = 403;
       return { success: false, message: "Forbidden" };
     }
-    return userService.findAll();
+    const { search, role } = query;
+    return userService.findAll(search, role);
+  }, {
+    query: t.Object({
+        search: t.Optional(t.String()),
+        role: t.Optional(t.String())
+    })
   })
 
   // GET /api/users/:id - Get Single User
@@ -87,7 +93,7 @@ export const UserController = new Elysia({ prefix: "/users" })
       email: t.String(),
       password: t.String(),
       name: t.String(),
-      role: t.Union([t.Literal('ADMIN'), t.Literal('STAFF')]),
+      role: t.Union([t.Literal('ADMIN'), t.Literal('STAFF'), t.Literal('GREETER')]),
       counters: t.Optional(t.Array(t.Number()))
     })
   })
@@ -117,7 +123,7 @@ export const UserController = new Elysia({ prefix: "/users" })
   }, {
     body: t.Object({
       name: t.Optional(t.String()),
-      role: t.Optional(t.Union([t.Literal('ADMIN'), t.Literal('STAFF')])),
+      role: t.Optional(t.Union([t.Literal('ADMIN'), t.Literal('STAFF'), t.Literal('GREETER')])),
       counters: t.Optional(t.Array(t.Number())),
       password: t.Optional(t.String())
     })

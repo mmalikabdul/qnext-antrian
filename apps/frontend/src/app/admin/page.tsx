@@ -5,13 +5,18 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { 
     LogOut, BarChart2, Settings, UserCog, Building, FileText, Palette, 
-    ChevronLeft, ChevronRight, Menu 
+    ChevronLeft, ChevronRight, Menu, CalendarClock, ChevronDown 
 } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/context/auth-context';
 import { useToast } from '@/hooks/use-toast';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible"
 
 // Import Components Baru
 import { DashboardTab } from '@/features/admin/components/DashboardTab';
@@ -20,12 +25,32 @@ import { CounterTab } from '@/features/admin/components/CounterTab';
 import { ServiceTab } from '@/features/admin/components/ServiceTab';
 import { DisplayTab } from '@/features/admin/components/DisplayTab';
 import { ReportTab } from '@/features/admin/components/ReportTab';
+import { GuestTab } from '@/features/admin/components/GuestTab';
+import { HolidayTab } from '@/features/admin/components/HolidayTab';
+import { WorkingHoursTab } from '@/features/admin/components/WorkingHoursTab';
 
-const navItems = [
+type NavItem = {
+    id: string;
+    label: string;
+    icon: any;
+    children?: { id: string; label: string }[];
+};
+
+const navItems: NavItem[] = [
     { id: 'dashboard', label: 'Dasbor', icon: BarChart2 },
+    { id: 'guests', label: 'Daftar Tamu', icon: FileText },
     { id: 'staff', label: 'Pengguna', icon: UserCog },
+    { 
+        id: 'operational', 
+        label: 'Service', 
+        icon: CalendarClock,
+        children: [
+            { id: 'holidays', label: 'Hari Libur' },
+            { id: 'working-hours', label: 'Jam Kerja' }
+        ]
+    },
+    { id: 'services', label: 'Master Layanan', icon: Settings },
     { id: 'counters', label: 'Loket', icon: Building },
-    { id: 'services', label: 'Layanan', icon: Settings },
     { id: 'display', label: 'Tampilan', icon: Palette },
     { id: 'reports', label: 'Laporan', icon: FileText },
 ];
@@ -38,6 +63,9 @@ export default function AdminPage() {
   const [activeTab, setActiveTab] = React.useState('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(true);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
+  
+  // State untuk expand/collapse menu operational
+  const [isOperationalOpen, setIsOperationalOpen] = React.useState(false);
 
   // Proteksi Halaman
   React.useEffect(() => {
@@ -45,7 +73,7 @@ export default function AdminPage() {
         router.push('/login');
     } else if (!isLoading && user && user.role !== 'ADMIN') {
         toast({ variant: "destructive", title: "Akses Ditolak", description: "Hanya admin yang dapat mengakses halaman ini." });
-        router.push('/staff'); // Redirect staff ke halaman staff
+        router.push('/staff'); 
     }
   }, [user, isLoading, router, toast]);
 
@@ -56,7 +84,10 @@ export default function AdminPage() {
   const renderContent = () => {
     switch(activeTab) {
         case 'dashboard': return <DashboardTab />;
+        case 'guests': return <GuestTab />;
         case 'staff': return <StaffTab />;
+        case 'holidays': return <HolidayTab />;
+        case 'working-hours': return <WorkingHoursTab />;
         case 'counters': return <CounterTab />;
         case 'services': return <ServiceTab />;
         case 'display': return <DisplayTab />;
@@ -64,6 +95,71 @@ export default function AdminPage() {
         default: return <DashboardTab />;
     }
   }
+
+  // Render Nav Item Helper
+  const renderNavItem = (item: NavItem) => {
+      if (item.children) {
+          return (
+            <Collapsible 
+                key={item.id} 
+                open={isOperationalOpen} 
+                onOpenChange={setIsOperationalOpen}
+                className="w-full"
+            >
+                <CollapsibleTrigger asChild>
+                    <Button
+                        variant={(activeTab === 'holidays' || activeTab === 'working-hours') ? 'secondary' : 'ghost'}
+                        className={cn(
+                            "w-full justify-between group",
+                            !isSidebarOpen && "justify-center"
+                        )}
+                    >
+                        <div className="flex items-center">
+                            <item.icon className="h-5 w-5"/>
+                            <span className={cn(isSidebarOpen ? "ml-4" : "sr-only")}>{item.label}</span>
+                        </div>
+                        {isSidebarOpen && (
+                            <ChevronDown className={cn(
+                                "h-4 w-4 transition-transform duration-200", 
+                                isOperationalOpen ? "rotate-180" : ""
+                            )}/>
+                        )}
+                    </Button>
+                </CollapsibleTrigger>
+                <CollapsibleContent className="space-y-1">
+                    {item.children.map(child => (
+                        <Button
+                            key={child.id}
+                            variant={activeTab === child.id ? 'secondary' : 'ghost'}
+                            className={cn(
+                                "w-full justify-start text-sm",
+                                isSidebarOpen ? "pl-12" : "justify-center"
+                            )}
+                            onClick={() => setActiveTab(child.id)}
+                        >
+                            {isSidebarOpen ? child.label : (child.label[0])} 
+                        </Button>
+                    ))}
+                </CollapsibleContent>
+            </Collapsible>
+          );
+      }
+
+      return (
+        <Button
+            key={item.id}
+            variant={activeTab === item.id ? 'secondary' : 'ghost'}
+            className={cn(
+                "w-full justify-start",
+                !isSidebarOpen && "justify-center"
+            )}
+            onClick={() => setActiveTab(item.id)}
+        >
+            <item.icon className="h-5 w-5"/>
+            <span className={cn(isSidebarOpen ? "ml-4" : "sr-only")}>{item.label}</span>
+        </Button>
+      );
+  };
 
   if (isLoading || !user) {
     return (
@@ -94,21 +190,8 @@ export default function AdminPage() {
                  {isSidebarOpen ? <ChevronLeft /> : <ChevronRight />}
             </Button>
         </div>
-        <nav className="flex-1 px-4 py-4 space-y-2">
-            {navItems.map(item => (
-                <Button
-                    key={item.id}
-                    variant={activeTab === item.id ? 'secondary' : 'ghost'}
-                    className={cn(
-                        "w-full justify-start",
-                        !isSidebarOpen && "justify-center"
-                    )}
-                    onClick={() => setActiveTab(item.id)}
-                >
-                    <item.icon className="h-5 w-5"/>
-                    <span className={cn(isSidebarOpen ? "ml-4" : "sr-only")}>{item.label}</span>
-                </Button>
-            ))}
+        <nav className="flex-1 px-4 py-4 space-y-2 overflow-y-auto">
+            {navItems.map(item => renderNavItem(item))}
         </nav>
         <div className="px-4 py-4 border-t">
             <Button variant="outline" onClick={handleLogout} className="w-full justify-center">
@@ -141,31 +224,53 @@ export default function AdminPage() {
             
             {/* Mobile Menu Overlay */}
              {isMobileMenuOpen && (
-                <div className="lg:hidden bg-card border-b absolute top-20 w-full z-20 shadow-lg">
+                <div className="lg:hidden bg-card border-b absolute top-20 w-full z-20 shadow-lg h-[calc(100vh-5rem)] overflow-y-auto">
                     <nav className="flex flex-col p-4 space-y-1">
-                         {navItems.map(item => (
-                            <Button
-                                key={item.id}
-                                variant={activeTab === item.id ? 'secondary' : 'ghost'}
-                                className="w-full justify-start"
-                                onClick={() => {
-                                    setActiveTab(item.id);
-                                    setIsMobileMenuOpen(false);
-                                }}
-                            >
-                                <item.icon className="mr-2"/>
-                                <span>{item.label}</span>
-                            </Button>
-                        ))}
-                         <Button variant="outline" onClick={handleLogout} className="w-full justify-start">
-                             <LogOut className="mr-2"/>
+                         {navItems.map(item => {
+                             if(item.children) {
+                                 return (
+                                     <div key={item.id} className="space-y-1">
+                                         <div className="font-medium px-4 py-2 text-sm text-muted-foreground">{item.label}</div>
+                                         {item.children.map(child => (
+                                             <Button
+                                                key={child.id}
+                                                variant={activeTab === child.id ? 'secondary' : 'ghost'}
+                                                className="w-full justify-start pl-8"
+                                                onClick={() => {
+                                                    setActiveTab(child.id);
+                                                    setIsMobileMenuOpen(false);
+                                                }}
+                                            >
+                                                <span>{child.label}</span>
+                                            </Button>
+                                         ))}
+                                     </div>
+                                 )
+                             }
+                             return (
+                                <Button
+                                    key={item.id}
+                                    variant={activeTab === item.id ? 'secondary' : 'ghost'}
+                                    className="w-full justify-start"
+                                    onClick={() => {
+                                        setActiveTab(item.id);
+                                        setIsMobileMenuOpen(false);
+                                    }}
+                                >
+                                    <item.icon className="mr-2 h-5 w-5"/>
+                                    <span>{item.label}</span>
+                                </Button>
+                             )
+                         })}
+                         <Button variant="outline" onClick={handleLogout} className="w-full justify-start mt-4">
+                             <LogOut className="mr-2 h-5 w-5"/>
                             <span>Logout</span>
                         </Button>
                     </nav>
                 </div>
             )}
 
-            <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto">
+            <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto bg-slate-50/50">
                {renderContent()}
             </main>
         </div>

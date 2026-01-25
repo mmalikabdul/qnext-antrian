@@ -5,22 +5,26 @@ import { ResponsiveContainer, BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Le
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { dashboardService } from '../services/dashboard.service';
-import { Ticket as TicketType } from '@/types/queue';
+import { counterService } from '../services/counter.service';
+import { Ticket as TicketType, Counter } from '@/types/queue';
 
 export const DashboardTab = () => {
   const [tickets, setTickets] = useState<TicketType[]>([]);
   const [servingTickets, setServingTickets] = useState<TicketType[]>([]);
+  const [counters, setCounters] = useState<Counter[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [todayData, servingData] = await Promise.all([
+        const [todayData, servingData, allCounters] = await Promise.all([
           dashboardService.getTodayTickets(),
-          dashboardService.getServingTickets()
+          dashboardService.getServingTickets(),
+          counterService.getAll()
         ]);
         setTickets(todayData);
         setServingTickets(servingData);
+        setCounters(allCounters);
       } catch (error) {
         console.error("Failed to fetch dashboard data", error);
       } finally {
@@ -29,8 +33,8 @@ export const DashboardTab = () => {
     };
     fetchData();
     
-    // Polling setiap 10 detik (sementara ganti socket)
-    const interval = setInterval(fetchData, 10000);
+    // Polling setiap 5 detik agar status loket realtime
+    const interval = setInterval(fetchData, 5000);
     return () => clearInterval(interval);
   }, []);
 
@@ -38,11 +42,10 @@ export const DashboardTab = () => {
   const waitingTickets = tickets.filter(t => t.status === 'WAITING').length;
   const servedTickets = tickets.filter(t => t.status === 'DONE').length;
 
-  // Dummy Chart Data (Nanti bisa dihitung real dari tickets)
-  const chartData = [
-      { name: '09:00', 'Layanan A': 4, 'Layanan B': 2 },
-      { name: '10:00', 'Layanan A': 5, 'Layanan B': 8 },
-  ];
+  // Hitung Status Loket
+  const activeCounters = counters.filter(c => c.status === 'ACTIVE').length;
+  const breakCounters = counters.filter(c => c.status === 'BREAK').length;
+  const inactiveCounters = counters.filter(c => !c.status || c.status === 'INACTIVE').length;
 
   if (loading) return <div>Memuat Data Dashboard...</div>;
 
@@ -78,12 +81,15 @@ export const DashboardTab = () => {
         </Card>
          <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Waktu Tunggu Rata-rata</CardTitle>
+            <CardTitle className="text-sm font-medium">Status Loket</CardTitle>
             <Clock className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">- mnt</div>
-             <p className="text-xs text-muted-foreground">Belum dihitung</p>
+            <div className="flex gap-2 mt-1">
+                <Badge className="bg-green-600 hover:bg-green-700">{activeCounters} Aktif</Badge>
+                <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 hover:bg-yellow-200">{breakCounters} Istirahat</Badge>
+                <Badge variant="destructive">{inactiveCounters} Tutup</Badge>
+            </div>
           </CardContent>
         </Card>
       </div>

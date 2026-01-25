@@ -2,11 +2,7 @@ export interface Counter {
   id: number;
   name: string;
   label?: string;
-  // Di backend status tidak ada di model Counter (hanya nama & label), 
-  // tapi frontend sebelumnya punya status 'open'/'closed'. 
-  // Kita sesuaikan dengan backend dulu (nama, label).
-  // Jika butuh status open/close, itu mungkin state lokal atau perlu tambah field di DB.
-  // Untuk sementara kita anggap semua counter aktif.
+  status?: 'ACTIVE' | 'INACTIVE' | 'BREAK';
 }
 
 export interface Service {
@@ -17,6 +13,10 @@ export interface Service {
   icon?: string;
   quota: number;
   usedQuota?: number;
+  startTime?: string;
+  endTime?: string;
+  isOpen?: boolean;
+  statusMessage?: string;
 }
 
 export interface Ticket {
@@ -26,10 +26,16 @@ export interface Ticket {
   status: 'WAITING' | 'SERVING' | 'DONE' | 'SKIPPED';
   serviceId: number;
   counterId?: number;
+  startedAt?: string;
+  finishedAt?: string;
   createdAt: string;
   updatedAt: string;
   service?: Service;
   counter?: Counter;
+  booking?: {
+    code: string;
+    jenisBooking?: string;
+  };
 }
 
 export interface AppSetting {

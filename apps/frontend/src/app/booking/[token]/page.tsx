@@ -14,6 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Service } from "@/types/queue";
 import { kioskService } from "@/features/kiosk/services/kiosk.service";
 import { bookingService } from "@/features/booking/services/booking.service";
+import { holidayService } from "@/features/admin/services/holiday.service";
 import { apiClient } from "@/lib/api-client";
 
 // OSS SSO Types
@@ -77,6 +78,7 @@ export default function BookingPage() {
     const [isChecking, setIsChecking] = useState(false);
     const [availability, setAvailability] = useState<{ available: boolean; remaining: number } | null>(null);
     const [bookingCode, setBookingCode] = useState<string | null>(null);
+    const [holidays, setHolidays] = useState<Date[]>([]);
 
     const [issueDescription, setIssueDescription] = useState("");
     const [file, setFile] = useState<File | null>(null);
@@ -96,13 +98,13 @@ export default function BookingPage() {
                 }
 
                 // Call SSO API to validate token and get user info
-                const response = await fetch('https://api-stg.oss.go.id/stg/v1/sso/users/userinfo-token', {
+                const response = await fetch('https://api-prd.oss.go.id/v1/sso/users/userinfo-token', {
                     method: 'GET',
                     headers: {
                         'Accept': '*/*',
                         'Authorization': `Bearer ${token}`,
                         'Content-Type': 'application/json',
-                        'user_key': process.env.USER_KEY_SSO_OSS_STG || 'f9c53f291ab3b47251ef5b001b4f6dcc',
+                        'user_key': process.env.USER_KEY_SSO_OSS_PRD || '846ee507525c6b00d18733e066bd5686',
                     },
                 });
 
@@ -135,10 +137,11 @@ export default function BookingPage() {
         validateToken();
     }, [params, toast]);
 
-    // Load Services (only after authenticated)
+    // Load Services & Holidays (only after authenticated)
     useEffect(() => {
         if (userData) {
             kioskService.getServices().then(setServices);
+            holidayService.getActiveHolidays().then(setHolidays);
         }
     }, [userData]);
 
@@ -200,6 +203,7 @@ export default function BookingPage() {
             // Prepare User Details from OSS Data
             const userDetails = {
                 email: userData?.email,
+                nama: userData?.nama, // <-- Tambahkan ini
                 nib: userData?.data_nib?.[0], // Ambil NIB pertama
                 namaPerusahaan: userData?.data_menu?.nama_akun,
                 idProfileOss: userData?.id_profile
@@ -211,7 +215,8 @@ export default function BookingPage() {
                 dateStr, 
                 issueDescription, 
                 fileUrl,
-                userDetails
+                userDetails,
+                'ONLINE'
             );
             
             setBookingCode(res.code);
@@ -304,7 +309,20 @@ export default function BookingPage() {
                                         mode="single"
                                         selected={date}
                                         onSelect={setDate}
-                                        disabled={(date) => date < new Date(new Date().setHours(0,0,0,0))}
+                                        disabled={(date) => {
+                                            // Disable hari libur dari DB
+                                            const isHoliday = holidays.some(h => 
+                                                h.getFullYear() === date.getFullYear() &&
+                                                h.getMonth() === date.getMonth() &&
+                                                h.getDate() === date.getDate()
+                                            );
+                                            // Disable hari kemarin
+                                            const isPast = date < new Date(new Date().setHours(0,0,0,0));
+                                            // Disable Sabtu (6) & Minggu (0)
+                                            const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+
+                                            return isHoliday || isPast || isWeekend;
+                                        }}
                                         initialFocus
                                         className="rounded-md border"
                                     />

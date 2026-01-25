@@ -3,6 +3,8 @@ import { TicketStatus } from "@prisma/client";
 import { emitQueueUpdate } from "../lib/socket";
 import { formatTicketNumber, getStartOfToday } from "../utils/ticket.util";
 
+import * as ExcelJS from 'exceljs';
+
 export class TicketService {
   /**
    * Mengambil daftar tiket hari ini (Waiting & Serving)
@@ -50,7 +52,7 @@ export class TicketService {
   /**
    * Cetak Tiket Baru (Kiosk)
    */
-  async createTicket(serviceId: number) {
+  async createTicket(serviceId: number, bookingId?: number) {
     const today = getStartOfToday();
     
     // Gunakan Transaction agar sequence aman
@@ -79,6 +81,7 @@ export class TicketService {
           serviceId,
           sequence,
           number,
+          bookingId, // Link ke Booking jika ada
           status: TicketStatus.WAITING
         },
         include: {
@@ -158,7 +161,8 @@ export class TicketService {
         data: {
           status: TicketStatus.SERVING,
           counterId,
-          updatedAt: new Date() // Waktu panggil
+          startedAt: new Date(), // Mulai hitung waktu layanan
+          updatedAt: new Date() 
         },
         include: {
           service: true,
@@ -197,7 +201,8 @@ export class TicketService {
     const ticket = await prisma.ticket.update({
       where: { id: ticketId },
       data: {
-        status: TicketStatus.DONE
+        status: TicketStatus.DONE,
+        finishedAt: new Date() // Selesai dilayani
       }
     });
     
@@ -218,6 +223,149 @@ export class TicketService {
 
     emitQueueUpdate({ type: "SKIP_TICKET", ticketId });
     return ticket;
+  }
+
+  /**
+   * Ambil Semua Tiket (Pagination & Filter)
+   */
+  async getAll(page: number, limit: number, startDate?: string, endDate?: string, serviceId?: number, counterId?: number) {
+    const skip = (page - 1) * limit;
+    const whereClause: any = {};
+
+    if (startDate && endDate) {
+        const start = new Date(startDate);
+        start.setHours(0, 0, 0, 0);
+
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+
+        whereClause.createdAt = {
+            gte: start,
+            lte: end
+        };
+    }
+
+    if (serviceId) {
+        whereClause.serviceId = serviceId;
+    }
+
+    if (counterId) {
+        whereClause.counterId = counterId;
+    }
+
+    const [data, total] = await Promise.all([
+        prisma.ticket.findMany({
+            where: whereClause,
+            include: {
+                service: true,
+                counter: true,
+                booking: true
+            },
+            skip,
+            take: limit,
+            orderBy: { createdAt: 'desc' }
+        }),
+        prisma.ticket.count({ where: whereClause })
+    ]);
+
+    return {
+        data,
+        meta: {
+            page,
+            limit,
+            total,
+            totalPages: Math.ceil(total / limit)
+        }
+    };
+  }
+
+  /**
+   * Export Laporan Tiket ke Excel
+   */
+  async exportToExcel(startDate?: string, endDate?: string, serviceId?: number, counterId?: number) {
+    const whereClause: any = {};
+
+    if (startDate && endDate) {
+        const start = new Date(startDate);
+        start.setHours(0, 0, 0, 0);
+
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+
+        whereClause.createdAt = {
+            gte: start,
+            lte: end
+        };
+    }
+
+    if (serviceId) whereClause.serviceId = serviceId;
+    if (counterId) whereClause.counterId = counterId;
+
+    const tickets = await prisma.ticket.findMany({
+        where: whereClause,
+        include: {
+            service: true,
+            counter: true,
+            booking: true
+        },
+        orderBy: { createdAt: 'desc' }
+    });
+
+    // Buat Workbook Excel
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Laporan Antrian');
+
+    // Definisi Kolom
+    sheet.columns = [
+        { header: 'Waktu Dibuat', key: 'createdAt', width: 20 },
+        { header: 'Nomor Tiket', key: 'number', width: 15 },
+        { header: 'Kode Booking', key: 'bookingCode', width: 20 },
+        { header: 'Nama Perusahaan', key: 'namaPerusahaan', width: 30 },
+        { header: 'NIB', key: 'nib', width: 20 },
+        { header: 'Layanan', key: 'service', width: 25 },
+        { header: 'Loket', key: 'counter', width: 20 },
+        { header: 'Status', key: 'status', width: 15 },
+        { header: 'Jenis Booking', key: 'bookingType', width: 15 },
+        { header: 'Kendala', key: 'issueDescription', width: 40 },
+        { header: 'Waktu Mulai', key: 'startedAt', width: 20 },
+        { header: 'Waktu Selesai', key: 'finishedAt', width: 20 },
+        { header: 'Durasi (Menit)', key: 'duration', width: 15 },
+    ];
+
+    // Mapping Status Tiket ke Bahasa Indonesia (Opsional, agar konsisten dengan Booking)
+    const ticketStatusMap: Record<string, string> = {
+        WAITING: 'Menunggu',
+        SERVING: 'Dilayani',
+        DONE: 'Selesai',
+        SKIPPED: 'Dilewati'
+    };
+
+    tickets.forEach(t => {
+        let duration = '-';
+        if (t.startedAt && t.finishedAt) {
+            const diffMs = t.finishedAt.getTime() - t.startedAt.getTime();
+            duration = (diffMs / 60000).toFixed(2); // Menit dengan 2 desimal
+        }
+
+        sheet.addRow({
+            createdAt: t.createdAt.toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }),
+            number: t.number,
+            bookingCode: t.booking?.code || '-',
+            namaPerusahaan: t.booking?.namaPerusahaan || '-',
+            nib: t.booking?.nib || '-',
+            service: t.service.name,
+            counter: t.counter?.name || '-',
+            status: ticketStatusMap[t.status] || t.status,
+            bookingType: t.booking?.jenisBooking || '-',
+            issueDescription: t.booking?.issueDescription || '-',
+            startedAt: t.startedAt ? t.startedAt.toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }) : '-',
+            finishedAt: t.finishedAt ? t.finishedAt.toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }) : '-',
+            duration: duration
+        });
+    });
+
+    sheet.getRow(1).font = { bold: true };
+    return await workbook.xlsx.writeBuffer();
   }
 
   /**

@@ -53,6 +53,74 @@ export const TicketController = new Elysia({ prefix: "/tickets" })
 
   // --- PROTECTED ROUTES (Staff Operasional) ---
 
+  // Get All Tickets (Paginated) - Admin Only
+  .get("/", async ({ query, ticketService, user, set }) => {
+    if (!user) {
+      set.status = 401;
+      return { success: false, message: "Unauthorized" };
+    }
+    if (user.role !== 'ADMIN') {
+      set.status = 403;
+      return { success: false, message: "Forbidden" };
+    }
+    
+    const { page, limit, startDate, endDate, serviceId, counterId } = query;
+    return await ticketService.getAll(
+        Number(page) || 1,
+        Number(limit) || 10,
+        startDate,
+        endDate,
+        serviceId ? Number(serviceId) : undefined,
+        counterId ? Number(counterId) : undefined
+    );
+  }, {
+    query: t.Object({
+        page: t.Optional(t.String()),
+        limit: t.Optional(t.String()),
+        startDate: t.Optional(t.String()),
+        endDate: t.Optional(t.String()),
+        serviceId: t.Optional(t.String()),
+        counterId: t.Optional(t.String())
+    })
+  })
+
+  // Export Report to Excel - Admin Only
+  .get("/export", async ({ query, ticketService, user, set }) => {
+    if (!user) {
+      set.status = 401;
+      return { success: false, message: "Unauthorized" };
+    }
+    if (user.role !== 'ADMIN') {
+      set.status = 403;
+      return { success: false, message: "Forbidden" };
+    }
+
+    const { startDate, endDate, serviceId, counterId } = query;
+    try {
+        const buffer = await ticketService.exportToExcel(
+            startDate, 
+            endDate, 
+            serviceId ? Number(serviceId) : undefined, 
+            counterId ? Number(counterId) : undefined
+        );
+        
+        set.headers['Content-Type'] = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+        set.headers['Content-Disposition'] = `attachment; filename="Laporan_Tiket_${Date.now()}.xlsx"`;
+        
+        return new Response(buffer as BlobPart);
+    } catch (e: any) {
+        set.status = 500;
+        return { success: false, message: e.message };
+    }
+  }, {
+    query: t.Object({
+        startDate: t.Optional(t.String()),
+        endDate: t.Optional(t.String()),
+        serviceId: t.Optional(t.String()),
+        counterId: t.Optional(t.String())
+    })
+  })
+
   // Get Report Data (Admin Only)
   .get("/report", async ({ query, ticketService, user, set }) => {
     if (!user) {

@@ -1,6 +1,7 @@
 import { prisma } from "../lib/prisma";
-import { BookingStatus } from "@prisma/client";
+import { BookingStatus, BookingType } from "@prisma/client";
 import { TicketService } from "./ticket.service";
+import * as ExcelJS from 'exceljs';
 
 export class BookingService {
   private ticketService = new TicketService();
@@ -21,11 +22,13 @@ export class BookingService {
     
     // Hitung booking yang sudah CONFIRMED/PENDING/USED pada tanggal tersebut
     // Kita exclude CANCELLED
+    // DAN HANYA HITUNG YANG ONLINE (Sesuai request: Offline tidak memotong kuota)
     const existingBookings = await prisma.booking.count({
       where: {
         serviceId,
         bookingDate: bookingDate,
-        status: { not: BookingStatus.CANCELLED }
+        status: { not: BookingStatus.CANCELLED },
+        jenisBooking: BookingType.ONLINE 
       }
     });
 
@@ -47,17 +50,31 @@ export class BookingService {
     issueDescription?: string, 
     fileUrl?: string,
     email?: string,
+    nama?: string,
     nib?: string,
     namaPerusahaan?: string,
-    idProfileOss?: string
+    idProfileOss?: string,
+    jenisBooking: BookingType = BookingType.ONLINE
   ) {
-    // 1. Cek Availability dulu
-    const check = await this.checkAvailability(serviceId, dateStr);
-    if (!check.available) {
-      throw new Error("Kuota penuh untuk tanggal tersebut.");
-    }
+    let bookingDate: Date;
 
-    const bookingDate = new Date(dateStr);
+    // LOGIKA TANGGAL & KUOTA
+    if (jenisBooking === BookingType.OFFLINE) {
+        // Jika OFFLINE (Greeter), paksa tanggal menjadi HARI INI (Server Time)
+        const today = new Date();
+        // Set ke jam 00:00:00 untuk konsistensi penyimpanan
+        bookingDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+        
+        // Pengecekan Kuota DI-SKIP untuk Offline (Bisa overbook / unlimited by Greeter)
+    } else {
+        // Jika ONLINE, gunakan tanggal request dan CEK KUOTA
+        bookingDate = new Date(dateStr);
+        
+        const check = await this.checkAvailability(serviceId, dateStr);
+        if (!check.available) {
+          throw new Error("Kuota penuh untuk tanggal tersebut.");
+        }
+    }
 
     // 2. Generate Booking Code (e.g., BOOK-TIMESTAMP-RANDOM)
     // Agar unik dan simple: B-[SERVICE_CODE]-[RANDOM 4 DIGIT]
@@ -77,9 +94,11 @@ export class BookingService {
         issueDescription,
         fileUrl,
         email,
+        nama,
         nib,
         namaPerusahaan,
         idProfileOss,
+        jenisBooking,
         status: BookingStatus.PENDING
       },
       include: {
@@ -150,15 +169,155 @@ export class BookingService {
         throw new Error(`Booking ini untuk tanggal ${bookingDateInJakarta}, hari ini tanggal ${todayInJakarta}.`);
     }
 
-    // 5. Jika Lolos -> Cetak Tiket
-    const ticket = await this.ticketService.createTicket(serviceId);
+    // 5. Jika Lolos -> Cetak Tiket (Link ke Booking ID)
+    const ticket = await this.ticketService.createTicket(serviceId, booking.id);
 
-    // 6. Update Status Booking jadi USED
+    // 6. Update Status Booking jadi USED dan catat Check-In
     await prisma.booking.update({
         where: { id: booking.id },
-        data: { status: BookingStatus.USED }
+        data: { 
+            status: BookingStatus.USED,
+            checkInDate: new Date()
+        }
     });
 
     return ticket;
+  }
+
+  /**
+   * Helper Private: Build Where Clause
+   */
+  private buildWhereClause(search?: string, status?: string, date?: string) {
+    const whereClause: any = {};
+
+    // Filter Search
+    if (search) {
+        whereClause.OR = [
+            { code: { contains: search, mode: 'insensitive' } },
+            { namaPerusahaan: { contains: search, mode: 'insensitive' } },
+            { email: { contains: search, mode: 'insensitive' } },
+            { nib: { contains: search, mode: 'insensitive' } },
+        ];
+    }
+
+    // Filter Status
+    if (status && status !== 'ALL') {
+        whereClause.status = status;
+    }
+
+    // Filter Date (createdAt)
+    if (date) {
+        const start = new Date(date);
+        start.setHours(0, 0, 0, 0);
+        
+        const end = new Date(date);
+        end.setHours(23, 59, 59, 999);
+
+        whereClause.createdAt = {
+            gte: start,
+            lte: end
+        };
+    }
+
+    return whereClause;
+  }
+
+  /**
+   * Ambil Semua Booking (Untuk Admin - Daftar Tamu)
+   */
+  async getAll(page: number = 1, limit: number = 10, search?: string, status?: string, date?: string) {
+    const skip = (page - 1) * limit;
+    const whereClause = this.buildWhereClause(search, status, date);
+
+    const [data, total] = await Promise.all([
+        prisma.booking.findMany({
+            where: whereClause,
+            include: { service: true, ticket: true },
+            skip,
+            take: limit,
+            orderBy: { createdAt: 'desc' }
+        }),
+        prisma.booking.count({ where: whereClause })
+    ]);
+
+    return {
+        data,
+        meta: {
+            page,
+            limit,
+            total,
+            totalPages: Math.ceil(total / limit)
+        }
+    };
+  }
+
+  /**
+   * Export Data ke Excel
+   */
+  async exportToExcel(search?: string, status?: string, date?: string) {
+    const whereClause = this.buildWhereClause(search, status, date);
+
+    // Ambil SEMUA data (tanpa skip/take)
+    const bookings = await prisma.booking.findMany({
+        where: whereClause,
+        include: { service: true, ticket: true },
+        orderBy: { createdAt: 'desc' }
+    });
+
+    // Buat Workbook Excel
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Daftar Tamu');
+
+    // Definisi Kolom
+    sheet.columns = [
+        { header: 'ID Booking', key: 'code', width: 20 },
+        { header: 'No. Tiket', key: 'ticketNumber', width: 15 },
+        { header: 'Nama Tamu', key: 'nama', width: 25 }, // Kolom Baru
+        { header: 'Nama Perusahaan', key: 'namaPerusahaan', width: 30 },
+        { header: 'Email', key: 'email', width: 25 },
+        { header: 'NIB', key: 'nib', width: 20 },
+        { header: 'Layanan', key: 'service', width: 20 },
+        { header: 'Jenis Booking', key: 'jenisBooking', width: 15 }, // Kolom Baru
+        { header: 'Status Booking', key: 'status', width: 15 },
+        { header: 'Status Terlayani', key: 'ticketStatus', width: 20 },
+        { header: 'Deskripsi Kendala', key: 'issueDescription', width: 40 },
+        { header: 'Tanggal Booking', key: 'bookingDate', width: 15 },
+        { header: 'Waktu Check-In', key: 'checkInDate', width: 20 },
+        { header: 'Waktu Dibuat', key: 'createdAt', width: 20 },
+    ];
+
+    // Mapping Status Tiket ke Bahasa Indonesia
+    const ticketStatusMap: Record<string, string> = {
+        WAITING: 'Menunggu Dipanggil',
+        SERVING: 'Dilayani',
+        DONE: 'Selesai Dilayani',
+        SKIPPED: 'Dilewati'
+    };
+
+    // Isi Baris
+    bookings.forEach(b => {
+        sheet.addRow({
+            code: b.code,
+            ticketNumber: b.ticket?.number || '-',
+            nama: b.nama || '-',
+            namaPerusahaan: b.namaPerusahaan || '-',
+            email: b.email || '-',
+            nib: b.nib || '-',
+            service: b.service.name,
+            jenisBooking: b.jenisBooking,
+            status: b.status,
+            ticketStatus: b.ticket ? (ticketStatusMap[b.ticket.status] || b.ticket.status) : '-',
+            issueDescription: b.issueDescription || '-',
+            bookingDate: b.bookingDate.toISOString().split('T')[0],
+            checkInDate: b.checkInDate ? b.checkInDate.toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }) : '-',
+            createdAt: b.createdAt.toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })
+        });
+    });
+
+    // Styling Header Sederhana
+    sheet.getRow(1).font = { bold: true };
+    
+    // Return Buffer
+    return await workbook.xlsx.writeBuffer();
   }
 }

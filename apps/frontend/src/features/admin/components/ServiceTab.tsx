@@ -128,19 +128,9 @@ export const ServiceTab = () => {
                                 <TableCell>{s.name}</TableCell>
                                 <TableCell>
                                     {s.quota ? (
-                                        <div className="flex flex-col">
-                                            <span>{s.usedQuota} / {s.quota}</span>
-                                            <div className="w-24 h-1 bg-secondary mt-1 rounded-full overflow-hidden">
-                                                <div 
-                                                    className={`h-full ${((s.usedQuota || 0) / s.quota) >= 1 ? 'bg-destructive' : 'bg-primary'}`}
-                                                    style={{ width: `${Math.min(100, ((s.usedQuota || 0) / s.quota) * 100)}%` }}
-                                                />
-                                            </div>
-                                        </div>
+                                        <span>{s.quota} / hari</span>
                                     ) : (
-                                        <div className="flex flex-col text-muted-foreground italic">
-                                            <span>{s.usedQuota} / ∞</span>
-                                        </div>
+                                        <span className="text-muted-foreground italic">Unlimited</span>
                                     )}
                                 </TableCell>
                                 <TableCell>{s.description || '-'}</TableCell>
