@@ -20,6 +20,8 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { socket } from "@/lib/socket";
+import { holidayService } from "@/features/admin/services/holiday.service";
 
 const getIcon = (iconName: string): React.ComponentType<LucideIcons.LucideProps> => {
     // @ts-ignore
@@ -37,10 +39,33 @@ export default function KioskPage() {
   
   const [bookingCode, setBookingCode] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isTodayHoliday, setIsTodayHoliday] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
     fetchServices();
+    checkHoliday();
+
+    // Socket Connection
+    if (!socket.connected) socket.connect();
+
+    const handleUpdate = (data: any) => {
+        // Jika ada update layanan atau antrian, refresh data
+        // Kita refresh untuk memastikan status Open/Close terupdate
+        fetchServices();
+        
+        // Cek ulang hari libur juga
+        checkHoliday();
+    };
+
+    socket.on("queue-updated", handleUpdate);
+
+    return () => {
+        socket.off("queue-updated", handleUpdate);
+        // Jangan disconnect global socket jika dipakai page lain, 
+        // tapi untuk kiosk dedicated bisa dipertimbangkan. 
+        // Biarkan connected untuk performa.
+    };
   }, []);
 
   const fetchServices = () => {
@@ -48,6 +73,21 @@ export default function KioskPage() {
         .then(setServices)
         .catch(err => console.error("Failed to load services", err));
   }
+
+  const checkHoliday = async () => {
+    try {
+        const holidays = await holidayService.getActiveHolidays();
+        const now = new Date();
+        const isHoliday = holidays.some(h => 
+            h.getFullYear() === now.getFullYear() &&
+            h.getMonth() === now.getMonth() &&
+            h.getDate() === now.getDate()
+        );
+        setIsTodayHoliday(isHoliday);
+    } catch (e) {
+        console.error("Failed to check holiday", e);
+    }
+  };
 
   const handleServiceClick = (service: Service) => {
     setSelectedService(service);
@@ -108,10 +148,12 @@ export default function KioskPage() {
     <KioskLayout>
           <div className="text-center mb-10">
             <h2 className="text-4xl font-extrabold text-primary tracking-tight">
-              Selamat Datang
+              {isTodayHoliday ? "Layanan Libur" : "Selamat Datang"}
             </h2>
             <p className="mt-2 text-lg text-muted-foreground max-w-2xl mx-auto">
-              Silakan pilih layanan yang Anda butuhkan.
+              {isTodayHoliday 
+                ? "Mohon maaf, hari ini layanan antrian sedang tidak beroperasi karena hari libur." 
+                : "Silakan pilih layanan yang Anda butuhkan."}
             </p>
           </div>
 
@@ -124,19 +166,34 @@ export default function KioskPage() {
                 {services.map((service) => {
                 // @ts-ignore
                 const Icon = getIcon(service.icon || 'Ticket');
+                const isClosed = service.isOpen === false || isTodayHoliday;
                 
                 return (
                     <button
                         key={service.id}
-                        onClick={() => handleServiceClick(service)}
-                        disabled={isLoading}
-                        className="group relative flex flex-col items-center justify-center p-8 bg-card rounded-xl shadow-md border-2 border-transparent hover:border-primary/50 hover:shadow-xl transition-all duration-300 active:scale-95 disabled:opacity-50 disabled:grayscale disabled:pointer-events-none"
+                        onClick={() => !isClosed && handleServiceClick(service)}
+                        disabled={isLoading || isClosed}
+                        className={`group relative flex flex-col items-center justify-center p-8 bg-card rounded-xl shadow-md border-2 border-transparent transition-all duration-300 active:scale-95 
+                            ${isClosed 
+                                ? 'opacity-60 cursor-not-allowed bg-slate-100 border-slate-200' 
+                                : 'hover:border-primary/50 hover:shadow-xl'
+                            }
+                        `}
                     >
-                         <div className="mb-6 p-4 bg-primary/10 rounded-full group-hover:bg-primary group-hover:text-primary-foreground transition-colors duration-300">
-                             <Icon className="h-12 w-12 text-primary group-hover:text-white" />
+                         <div className={`mb-6 p-4 rounded-full transition-colors duration-300 
+                             ${isClosed ? 'bg-slate-200 text-slate-400' : 'bg-primary/10 group-hover:bg-primary group-hover:text-primary-foreground'}
+                         `}>
+                             <Icon className="h-12 w-12" />
                          </div>
-                         <h3 className="text-2xl font-bold text-foreground mb-2">{service.name}</h3>
-                         <p className="text-muted-foreground text-sm mb-4">{service.description || 'Klik untuk ambil tiket'}</p>
+                         <h3 className={`text-2xl font-bold mb-2 ${isClosed ? 'text-slate-500' : 'text-foreground'}`}>{service.name}</h3>
+                         
+                         {isClosed ? (
+                             <div className="bg-destructive/10 text-destructive px-3 py-1 rounded-full text-xs font-medium mt-2">
+                                {isTodayHoliday ? 'Tutup (Hari Libur)' : (service.statusMessage || 'Tutup')}
+                             </div>
+                         ) : (
+                             <p className="text-muted-foreground text-sm mb-4">{service.description || 'Klik untuk ambil tiket'}</p>
+                         )}
                     </button>
                 )
                 })}

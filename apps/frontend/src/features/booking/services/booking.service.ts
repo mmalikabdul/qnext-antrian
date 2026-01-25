@@ -26,16 +26,19 @@ export const bookingService = {
     fileUrl?: string,
     userDetails?: {
         email?: string;
+        nama?: string;
         nib?: string;
         namaPerusahaan?: string;
         idProfileOss?: string | number;
-    }
+    },
+    jenisBooking: 'ONLINE' | 'OFFLINE' = 'ONLINE'
   ): Promise<BookingResponse> => {
     return await apiClient.post("/bookings", {
       serviceId,
       date,
       issueDescription,
       fileUrl,
+      jenisBooking,
       ...userDetails
     });
   },

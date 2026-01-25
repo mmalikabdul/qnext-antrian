@@ -30,7 +30,7 @@ export const CounterController = new Elysia({ prefix: "/counters" })
   })
 
   // Public Access (Untuk Display/Panggilan)
-  .get("/", ({ counterService }) => counterService.findAll())
+  .get("/", ({ counterService }) => counterService.getAll())
 
   // --- PROTECTED ROUTES (Admin Only) ---
   .post("/", async ({ body, counterService, user, set }) => {
@@ -55,15 +55,7 @@ export const CounterController = new Elysia({ prefix: "/counters" })
     })
   })
 
-  .put("/:id", async ({ params: { id }, body, counterService, user, set }) => {
-    if (!user) {
-      set.status = 401;
-      return { success: false, message: "Unauthorized" };
-    }
-    if (user.role !== 'ADMIN') {
-      set.status = 403;
-      return { success: false, message: "Forbidden" };
-    }
+  .put("/:id", async ({ params: { id }, body, counterService, set }) => {
     try {
       return await counterService.update(Number(id), body);
     } catch (e: any) {
@@ -73,7 +65,8 @@ export const CounterController = new Elysia({ prefix: "/counters" })
   }, {
     body: t.Object({
       name: t.Optional(t.String()),
-      label: t.Optional(t.String())
+      label: t.Optional(t.String()),
+      status: t.Optional(t.Union([t.Literal('ACTIVE'), t.Literal('INACTIVE'), t.Literal('BREAK')]))
     })
   })
 

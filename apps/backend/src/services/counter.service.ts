@@ -1,7 +1,9 @@
 import { prisma } from "../lib/prisma";
+import { emitQueueUpdate } from "../lib/socket";
+import { CounterStatus } from "@prisma/client";
 
 export class CounterService {
-  async findAll() {
+  async getAll() {
     return await prisma.counter.findMany({
       orderBy: { name: 'asc' }
     });
@@ -13,11 +15,14 @@ export class CounterService {
     });
   }
 
-  async update(id: number, data: { name?: string; label?: string }) {
-    return await prisma.counter.update({
+  async update(id: number, data: { name?: string; label?: string; status?: CounterStatus }) {
+    const updatedCounter = await prisma.counter.update({
       where: { id },
       data
     });
+    
+    emitQueueUpdate({ type: "COUNTER_UPDATE", counter: updatedCounter });
+    return updatedCounter;
   }
 
   async delete(id: number) {

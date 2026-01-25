@@ -20,6 +20,7 @@ export default function StaffDashboard() {
   const [counters, setCounters] = useState<Counter[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [selectedCounterId, setSelectedCounterId] = useState<string>('');
+  const [counterStatus, setCounterStatus] = useState<'ACTIVE' | 'INACTIVE' | 'BREAK'>('INACTIVE');
   const [currentTicket, setCurrentTicket] = useState<Ticket | null>(null);
   const [waitingCounts, setWaitingCounts] = useState<Record<number, number>>({});
   const [isLoading, setIsLoading] = useState(false);
@@ -34,14 +35,15 @@ export default function StaffDashboard() {
         ]);
 
         // Filter counter sesuai yang di-assign ke staff
-        // Note: user.counters berisi array ID [1, 2]
         const myCounters = allCounters.filter(c => user?.counters?.includes(c.id));
         setCounters(myCounters);
         setServices(allServices);
 
-        // Auto select counter pertama jika ada
+        // Auto select counter pertama jika ada & set statusnya
         if (myCounters.length > 0) {
-            setSelectedCounterId(myCounters[0].id.toString());
+            const first = myCounters[0];
+            setSelectedCounterId(first.id.toString());
+            setCounterStatus(first.status || 'INACTIVE');
         }
       } catch (e) {
         console.error("Failed to load init data", e);
@@ -49,6 +51,20 @@ export default function StaffDashboard() {
     };
     if (user) fetchData();
   }, [user]);
+
+  // Handle Status Change
+  const handleStatusChange = async (newStatus: 'ACTIVE' | 'INACTIVE' | 'BREAK') => {
+      if (!selectedCounterId) return;
+      try {
+          // Optimistic update
+          setCounterStatus(newStatus);
+          
+          await counterService.update(Number(selectedCounterId), { status: newStatus });
+          toast({ title: 'Status Diperbarui', description: `Loket sekarang ${newStatus === 'BREAK' ? 'Istirahat' : newStatus === 'ACTIVE' ? 'Aktif' : 'Tidak Aktif'}` });
+      } catch (e: any) {
+          toast({ variant: 'destructive', title: 'Gagal', description: e.message });
+      }
+  };
 
   // 2. Poll Waiting Counts (Update jumlah antrian setiap 5 detik)
   useEffect(() => {
@@ -170,11 +186,17 @@ export default function StaffDashboard() {
             {/* 1. Counter Selection */}
             <Card>
                 <CardHeader className="pb-3">
-                    <CardTitle className="text-base">Loket Aktif</CardTitle>
+                    <CardTitle className="text-base">Loket Aktif & Status</CardTitle>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="space-y-4">
                     {counters.length > 0 ? (
-                         <Select value={selectedCounterId} onValueChange={setSelectedCounterId} disabled={!!currentTicket}>
+                        <>
+                         <Select value={selectedCounterId} onValueChange={(val) => {
+                             setSelectedCounterId(val);
+                             // Update status state based on selected counter
+                             const c = counters.find(x => x.id === Number(val));
+                             if (c) setCounterStatus(c.status || 'INACTIVE');
+                         }} disabled={!!currentTicket}>
                             <SelectTrigger className="w-full text-lg h-12">
                                 <SelectValue placeholder="Pilih Loket Anda" />
                             </SelectTrigger>
@@ -184,6 +206,30 @@ export default function StaffDashboard() {
                                 ))}
                             </SelectContent>
                         </Select>
+
+                        <div className="grid grid-cols-3 gap-2">
+                            <Button 
+                                variant={counterStatus === 'ACTIVE' ? 'success' : 'outline'} 
+                                onClick={() => handleStatusChange('ACTIVE')}
+                                className={counterStatus === 'ACTIVE' ? "bg-green-600 hover:bg-green-700 text-white" : ""}
+                            >
+                                Aktif
+                            </Button>
+                            <Button 
+                                variant={counterStatus === 'BREAK' ? 'warning' : 'outline'} 
+                                onClick={() => handleStatusChange('BREAK')}
+                                className={counterStatus === 'BREAK' ? "bg-yellow-500 hover:bg-yellow-600 text-white" : ""}
+                            >
+                                Istirahat
+                            </Button>
+                            <Button 
+                                variant={counterStatus === 'INACTIVE' ? 'destructive' : 'outline'} 
+                                onClick={() => handleStatusChange('INACTIVE')}
+                            >
+                                Tutup
+                            </Button>
+                        </div>
+                        </>
                     ) : (
                         <Alert variant="destructive">
                             <AlertCircle className="h-4 w-4" />

@@ -2,8 +2,11 @@ import { apiClient } from "@/lib/api-client";
 import { User } from "@/types/auth";
 
 export const staffService = {
-  getAll: async (): Promise<User[]> => {
-    return await apiClient.get("/users");
+  getAll: async (search: string = "", role: string = ""): Promise<User[]> => {
+    let query = "/users?";
+    if(search) query += `search=${search}&`;
+    if(role && role !== 'ALL') query += `role=${role}`;
+    return await apiClient.get(query);
   },
 
   getById: async (id: number): Promise<User> => {

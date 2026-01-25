@@ -4,6 +4,53 @@ import { BookingService } from "../services/booking.service";
 export const BookingController = new Elysia({ prefix: "/bookings" })
   .decorate("bookingService", new BookingService())
   
+  // Get All Bookings (Admin)
+  .get("/", async ({ query, bookingService, set }) => {
+    try {
+        const { page, limit, search, status, date } = query;
+        return await bookingService.getAll(
+            Number(page) || 1,
+            Number(limit) || 10,
+            search,
+            status,
+            date
+        );
+    } catch (e: any) {
+        set.status = 500;
+        return { success: false, message: e.message };
+    }
+  }, {
+    query: t.Object({
+        page: t.Optional(t.String()),
+        limit: t.Optional(t.String()),
+        search: t.Optional(t.String()),
+        status: t.Optional(t.String()),
+        date: t.Optional(t.String())
+    })
+  })
+
+  // Export Excel
+  .get("/export", async ({ query, bookingService, set }) => {
+    try {
+        const { search, status, date } = query;
+        const buffer = await bookingService.exportToExcel(search, status, date);
+        
+        set.headers['Content-Type'] = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+        set.headers['Content-Disposition'] = `attachment; filename="Daftar_Tamu_${Date.now()}.xlsx"`;
+        
+        return new Response(buffer as BlobPart);
+    } catch (e: any) {
+        set.status = 500;
+        return { success: false, message: e.message };
+    }
+  }, {
+    query: t.Object({
+        search: t.Optional(t.String()),
+        status: t.Optional(t.String()),
+        date: t.Optional(t.String())
+    })
+  })
+
   // Cek Ketersediaan
   .get("/check", async ({ query, bookingService, set }) => {
     try {
@@ -19,7 +66,7 @@ export const BookingController = new Elysia({ prefix: "/bookings" })
   // Buat Booking
   .post("/", async ({ body, bookingService, set }) => {
     try {
-        const { serviceId, date, issueDescription, fileUrl, email, nib, namaPerusahaan, idProfileOss } = body;
+        const { serviceId, date, issueDescription, fileUrl, email, nama, nib, namaPerusahaan, idProfileOss, jenisBooking } = body;
         
         // Convert idProfileOss to string if it's a number
         const idProfileStr = idProfileOss ? String(idProfileOss) : undefined;
@@ -30,9 +77,11 @@ export const BookingController = new Elysia({ prefix: "/bookings" })
             issueDescription, 
             fileUrl,
             email,
+            nama,
             nib,
             namaPerusahaan,
-            idProfileStr
+            idProfileStr,
+            jenisBooking as any
         );
     } catch (e: any) {
         set.status = 400;
@@ -45,9 +94,11 @@ export const BookingController = new Elysia({ prefix: "/bookings" })
         issueDescription: t.Optional(t.String()),
         fileUrl: t.Optional(t.String()),
         email: t.Optional(t.String()),
+        nama: t.Optional(t.String()),
         nib: t.Optional(t.String()),
         namaPerusahaan: t.Optional(t.String()),
-        idProfileOss: t.Optional(t.Union([t.String(), t.Number()])) // Accept string or number
+        idProfileOss: t.Optional(t.Union([t.String(), t.Number()])), // Accept string or number
+        jenisBooking: t.Optional(t.Union([t.Literal('ONLINE'), t.Literal('OFFLINE')]))
     })
   })
 

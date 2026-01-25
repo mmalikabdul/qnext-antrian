@@ -21,6 +21,7 @@ enum TicketStatus {
 enum Role {
   ADMIN
   STAFF
+  GREETER
 }
 
 // User (Admin & Staff)
@@ -63,9 +64,24 @@ model Service {
   icon        String?  // Nama icon dari library Frontend
   quota       Int      @default(0) // Kuota harian
   
+  // Jam Kerja (Format HH:mm)
+  startTime   String   @default("08:00") 
+  endTime     String   @default("15:00")
+
   tickets     Ticket[] // Relasi one-to-many ke Tiket
   dailyStats  ServiceDailyStat[] // Relasi ke statistik harian
   bookings    Booking[] // Relasi ke booking online
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// Hari Libur
+model Holiday {
+  id          Int      @id @default(autoincrement())
+  date        DateTime @unique // Tanggal libur
+  description String
+  isActive    Boolean  @default(true)
   
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -101,6 +117,11 @@ enum BookingStatus {
   CANCELLED
 }
 
+enum BookingType {
+  ONLINE
+  OFFLINE
+}
+
 // Booking Online
 model Booking {
   id        Int           @id @default(autoincrement())
@@ -111,9 +132,13 @@ model Booking {
   
   // Tanggal rencana kedatangan (disimpan sebagai jam 00:00:00)
   bookingDate DateTime
+  
+  // Waktu kedatangan aktual (diisi saat redeem/check-in)
+  checkInDate DateTime?
 
   // Data User (dari SSO OSS)
   email           String?
+  nama            String?  // Nama Pemohon / Tamu
   nib             String?
   namaPerusahaan  String?
   idProfileOss    String?
@@ -121,10 +146,20 @@ model Booking {
   issueDescription String? // Penjelasan kendala
   fileUrl          String? // URL file pendukung (Local/Firebase)
   
-  status    BookingStatus @default(PENDING)
+  status        BookingStatus @default(PENDING)
+  jenisBooking  BookingType   @default(ONLINE)
   
+  // Relasi ke Tiket (One-to-One)
+  ticket    Ticket?
+
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
+}
+
+enum CounterStatus {
+  ACTIVE
+  INACTIVE
+  BREAK
 }
 
 // Loket (Tempat staff melayani)
@@ -132,6 +167,7 @@ model Counter {
   id        Int      @id @default(autoincrement())
   name      String   // "Loket 1", "Meja 2"
   label     String?  // Label display (opsional)
+  status    CounterStatus @default(INACTIVE)
   
   tickets   Ticket[] // Relasi: Loket ini melayani tiket mana saja
   
@@ -157,6 +193,15 @@ model Ticket {
 
   counterId Int?     // Nullable karena saat waiting belum ada loket
   counter   Counter? @relation(fields: [counterId], references: [id])
+
+  // Relasi ke Booking (Opsional, jika tiket berasal dari booking)
+  bookingId Int?     @unique
+  booking   Booking? @relation(fields: [bookingId], references: [id])
+
+  // Waktu Pengerjaan
+  startedAt  DateTime? // Waktu mulai dilayani (SERVING)
+  finishedAt DateTime? // Waktu selesai (DONE)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }

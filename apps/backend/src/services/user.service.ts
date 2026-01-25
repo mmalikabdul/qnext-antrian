@@ -5,8 +5,22 @@ export class UserService {
   /**
    * Mengambil semua user (Admin & Staff)
    */
-  async findAll() {
+  async findAll(search?: string, role?: string) {
+    const whereClause: any = {};
+
+    if (search) {
+        whereClause.OR = [
+            { name: { contains: search, mode: 'insensitive' } },
+            { email: { contains: search, mode: 'insensitive' } }
+        ];
+    }
+
+    if (role && role !== 'ALL') {
+        whereClause.role = role;
+    }
+
     return await prisma.user.findMany({
+      where: whereClause,
       orderBy: { createdAt: 'desc' },
       select: {
         id: true,

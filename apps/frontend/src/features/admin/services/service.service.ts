@@ -6,11 +6,11 @@ export const serviceService = {
     return await apiClient.get("/services");
   },
 
-  create: async (data: { name: string; code: string; description?: string }): Promise<Service> => {
+  create: async (data: { name: string; code: string; description?: string; startTime?: string; endTime?: string }): Promise<Service> => {
     return await apiClient.post("/services", data);
   },
 
-  update: async (id: number, data: { name?: string; code?: string; description?: string }): Promise<Service> => {
+  update: async (id: number, data: { name?: string; code?: string; description?: string; startTime?: string; endTime?: string }): Promise<Service> => {
     return await apiClient.put(`/services/${id}`, data);
   },
 

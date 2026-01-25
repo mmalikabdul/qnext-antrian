@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { PlusCircle, Edit, Trash2 } from 'lucide-react';
+import { PlusCircle, Edit, Trash2, Eye, EyeOff, Search } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from '@/hooks/use-toast';
 import { staffService } from '../services/staff.service';
 import { counterService } from '../services/counter.service';
@@ -17,10 +18,11 @@ const StaffForm = ({ staff, onSave, closeDialog }: { staff?: User | null, onSave
     const [name, setName] = useState('');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
-    const [role, setRole] = useState<'ADMIN' | 'STAFF'>('STAFF');
+    const [role, setRole] = useState<'ADMIN' | 'STAFF' | 'GREETER'>('STAFF');
     const [counters, setCounters] = useState<Counter[]>([]);
     const [assignedCounters, setAssignedCounters] = useState<number[]>([]);
     const [isLoading, setIsLoading] = useState(false);
+    const [showPassword, setShowPassword] = useState(false);
 
     // Populate data saat 'staff' prop berubah
     useEffect(() => {
@@ -28,7 +30,7 @@ const StaffForm = ({ staff, onSave, closeDialog }: { staff?: User | null, onSave
             // Mode Edit: Isi form dengan data user
             setName(staff.name || '');
             setEmail(staff.email || '');
-            setRole(staff.role || 'STAFF');
+            setRole((staff.role as any) || 'STAFF');
             setAssignedCounters(staff.counters || []);
             setPassword(''); // Password kosongkan (hanya diisi jika ingin ganti)
         } else {
@@ -67,11 +69,31 @@ const StaffForm = ({ staff, onSave, closeDialog }: { staff?: User | null, onSave
             setName('');
             setEmail('');
             setPassword('');
+            setRole('STAFF');
         }
     };
 
     return (
         <form onSubmit={handleSubmit} className="space-y-4">
+             {/* Pindah Posisi ke Atas */}
+             <div className="space-y-2">
+                <Label>Peran</Label>
+                <RadioGroup value={role} onValueChange={(v: any) => setRole(v)} className="flex gap-4">
+                    <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="STAFF" id="r1" />
+                        <Label htmlFor="r1">Staff</Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="ADMIN" id="r2" />
+                        <Label htmlFor="r2">Admin</Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="GREETER" id="r3" />
+                        <Label htmlFor="r3">Greeter</Label>
+                    </div>
+                </RadioGroup>
+            </div>
+
              <div className="space-y-2">
                 <Label>Nama</Label>
                 <Input value={name} onChange={e => setName(e.target.value)} required />
@@ -84,21 +106,31 @@ const StaffForm = ({ staff, onSave, closeDialog }: { staff?: User | null, onSave
             )}
              <div className="space-y-2">
                 <Label>{staff ? 'Password Baru (Opsional)' : 'Password'}</Label>
-                <Input type="password" value={password} onChange={e => setPassword(e.target.value)} required={!staff} />
+                <div className="relative">
+                    <Input 
+                        type={showPassword ? "text" : "password"} 
+                        value={password} 
+                        onChange={e => setPassword(e.target.value)} 
+                        required={!staff}
+                        className="pr-10" 
+                    />
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                        onClick={() => setShowPassword(!showPassword)}
+                    >
+                        {showPassword ? (
+                            <EyeOff className="h-4 w-4 text-muted-foreground" />
+                        ) : (
+                            <Eye className="h-4 w-4 text-muted-foreground" />
+                        )}
+                        <span className="sr-only">Toggle password visibility</span>
+                    </Button>
+                </div>
             </div>
-            <div className="space-y-2">
-                <Label>Peran</Label>
-                <RadioGroup value={role} onValueChange={(v: any) => setRole(v)} className="flex gap-4">
-                    <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="STAFF" id="r1" />
-                        <Label htmlFor="r1">Staff</Label>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="ADMIN" id="r2" />
-                        <Label htmlFor="r2">Admin</Label>
-                    </div>
-                </RadioGroup>
-            </div>
+            
             {role === 'STAFF' && (
                  <div className="space-y-2">
                     <Label>Loket</Label>
@@ -132,11 +164,25 @@ export const StaffTab = () => {
     const [editingStaff, setEditingStaff] = useState<User | null>(null);
     const { toast } = useToast();
 
-    const fetchUsers = () => staffService.getAll().then(setUsers);
+    // Filter States
+    const [search, setSearch] = useState("");
+    const [roleFilter, setRoleFilter] = useState("ALL");
+    
+    // Active Filters (Triggered by Search Button)
+    const [activeSearch, setActiveSearch] = useState("");
+    const [activeRole, setActiveRole] = useState("ALL");
+
+    const fetchUsers = () => staffService.getAll(activeSearch, activeRole).then(setUsers);
 
     useEffect(() => {
         fetchUsers();
-    }, []);
+    }, [activeSearch, activeRole]);
+
+    const handleSearch = (e: React.FormEvent) => {
+        e.preventDefault();
+        setActiveSearch(search);
+        setActiveRole(roleFilter);
+    };
 
     const handleEditClick = async (user: User) => {
         try {
@@ -179,23 +225,64 @@ export const StaffTab = () => {
 
     return (
         <Card>
-            <CardHeader className="flex flex-row justify-between">
-                <div>
-                    <CardTitle>Manajemen User</CardTitle>
-                    <CardDescription>Kelola Admin & Staff</CardDescription>
+            <CardHeader className="flex flex-col gap-4 space-y-0 pb-4">
+                <div className="flex flex-row justify-between items-center">
+                    <div>
+                        <CardTitle>Manajemen User</CardTitle>
+                        <CardDescription>Kelola Admin & Staff</CardDescription>
+                    </div>
+                    <Dialog open={isAddOpen} onOpenChange={(open) => {
+                        setIsAddOpen(open);
+                        if (!open) setEditingStaff(null); // Reset editingStaff saat dialog ditutup
+                    }}>
+                        <DialogTrigger asChild>
+                            <Button onClick={() => setEditingStaff(null)}><PlusCircle className="mr-2"/> Tambah</Button>
+                        </DialogTrigger>
+                        <DialogContent>
+                            <DialogHeader><DialogTitle>{editingStaff ? 'Edit User' : 'User Baru'}</DialogTitle></DialogHeader>
+                            <StaffForm staff={editingStaff} onSave={handleSave} closeDialog={() => setIsAddOpen(false)} />
+                        </DialogContent>
+                    </Dialog>
                 </div>
-                <Dialog open={isAddOpen} onOpenChange={(open) => {
-                    setIsAddOpen(open);
-                    if (!open) setEditingStaff(null); // Reset editingStaff saat dialog ditutup
-                }}>
-                    <DialogTrigger asChild>
-                        <Button onClick={() => setEditingStaff(null)}><PlusCircle className="mr-2"/> Tambah</Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                        <DialogHeader><DialogTitle>{editingStaff ? 'Edit User' : 'User Baru'}</DialogTitle></DialogHeader>
-                        <StaffForm staff={editingStaff} onSave={handleSave} closeDialog={() => setIsAddOpen(false)} />
-                    </DialogContent>
-                </Dialog>
+                
+                {/* Search & Filter Section */}
+                <form onSubmit={handleSearch} className="flex flex-col sm:flex-row gap-4 pt-4 border-t">
+                     <div className="flex flex-1 items-center gap-2 w-full sm:w-auto">
+                        <div className="grid gap-1.5 w-full sm:w-auto">
+                            <span className="text-xs font-medium text-muted-foreground">Cari (Nama/Email)</span>
+                            <div className="relative">
+                                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                                <Input
+                                    placeholder="Cari user..."
+                                    className="pl-8"
+                                    value={search}
+                                    onChange={(e) => setSearch(e.target.value)}
+                                />
+                            </div>
+                        </div>
+
+                        <div className="grid gap-1.5">
+                            <span className="text-xs font-medium text-muted-foreground">Role</span>
+                            <Select value={roleFilter} onValueChange={setRoleFilter}>
+                                <SelectTrigger className="w-[140px]">
+                                    <SelectValue placeholder="Role" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="ALL">Semua</SelectItem>
+                                    <SelectItem value="ADMIN">Admin</SelectItem>
+                                    <SelectItem value="STAFF">Staff</SelectItem>
+                                    <SelectItem value="GREETER">Greeter</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+
+                        <div className="grid gap-1.5">
+                            <span className="text-xs font-medium text-transparent">Action</span>
+                            <Button type="submit">Cari</Button>
+                        </div>
+                     </div>
+                </form>
+
             </CardHeader>
             <CardContent>
                 <Table>
